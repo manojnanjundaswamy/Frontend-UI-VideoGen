@@ -18,20 +18,28 @@ export const useEditorStore = create((set, get) => ({
 
   selectedRow: null,
   setSelectedRow: (row) => {
-    // when selecting row, load its filter_config into overlays
-    const filter_config = row?.filter_config ? JSON.parse(row.filter_config) : null;
-    set({
-      selectedRow: row,
-      filterConfigRaw: filter_config,
-      overlays: (filter_config && filter_config.visual_overlays) || {},
-      textOverlays: (filter_config && filter_config.text_overlays) || {},
-      audioOverlays: (filter_config && filter_config.audio_overlays) || {},
-      transitions: (filter_config && filter_config.transitions_overlays) || {},
-      meta: (filter_config && filter_config.meta) || {},
-      timing: (filter_config && filter_config.timing) || {},
-      selectedOverlayId: null
-    });
-  },
+  const filter_config = row?.filter_config ? JSON.parse(row.filter_config) : null;
+  const segments = row?.prompt_json ? JSON.parse(row.prompt_json) : [];
+
+  set({
+    selectedRow: row,
+
+    // segments (IMPORTANT)
+    segments,
+
+    // filter config parts
+    filterConfigRaw: filter_config,
+    overlays: (filter_config && filter_config.visual_overlays) || {},
+    textOverlays: (filter_config && filter_config.text_overlays) || {},
+    audioOverlays: (filter_config && filter_config.audio_overlays) || {},
+    transitions: (filter_config && filter_config.transitions_overlays) || {},
+    meta: (filter_config && filter_config.meta) || {},
+    timing: (filter_config && filter_config.timing) || {},
+
+    selectedOverlayId: null
+  });
+},
+
 
   // raw filter config parts
   filterConfigRaw: null,
