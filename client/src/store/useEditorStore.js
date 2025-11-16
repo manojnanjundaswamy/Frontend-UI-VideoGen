@@ -80,10 +80,20 @@ export const useEditorStore = create((set, get) => ({
       delete copy[key];
       return { overlays: copy, selectedOverlayId: null };
     }),
-
+  selectOverlay: (id) => set(() => ({ selectedOverlayId: id })),  
   // UI state
   needAudio: true,
-  setNeedAudio: (v) => set({ needAudio: v }),
+  setNeedAudio: (v) => set(() => ({ needAudio: !!v })),
+
+  // overlay presets (global)
+  overlayPresets: {},
+  addPreset: (name, overlay) => set((s) => ({ overlayPresets: { ...s.overlayPresets, [name]: overlay } })),
+  applyPreset: (name) => {
+    const p = get().overlayPresets[name];
+    if (!p) return;
+    const id = `${p.type}_${Date.now()}`;
+    set((s) => ({ overlays: { ...s.overlays, [id]: { ...p, id } }, selectedOverlayId: id }));
+  },
 
   // convenience: build final filter_config object
   buildFilterConfig: () => {
