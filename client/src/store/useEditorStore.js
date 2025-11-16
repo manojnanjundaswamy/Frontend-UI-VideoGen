@@ -49,17 +49,27 @@ export const useEditorStore = create(devtools((set, get) => ({
   setSelectedChannel: (ch) => set({ selectedChannel: ch }),
   setRows: (rows) => set({ rows }),
   setSelectedRow: (row) => {
-    // parse segments if row has field filter_config.segments etc
-    let segments = row?.segments || row?.parsed_segments || [];
-    // normalize if filter_config exists
-    try {
-      if (row?.filter_config && typeof row.filter_config === 'string') {
-        const cfg = JSON.parse(row.filter_config);
-        if (cfg.segments) segments = cfg.segments;
-      }
-    } catch (e) { /* ignore */ }
-    set({ selectedRow: row, segments });
-  },
+  const filter_config = row?.filter_config ? JSON.parse(row.filter_config) : null;
+  const segments = row?.prompt_json ? JSON.parse(row.prompt_json) : [];
+
+  set({
+    selectedRow: row,
+
+    // segments (IMPORTANT)
+    segments,
+
+    // filter config parts
+    filterConfigRaw: filter_config,
+    overlays: (filter_config && filter_config.visual_overlays) || {},
+    textOverlays: (filter_config && filter_config.text_overlays) || {},
+    audioOverlays: (filter_config && filter_config.audio_overlays) || {},
+    transitions: (filter_config && filter_config.transitions_overlays) || {},
+    meta: (filter_config && filter_config.meta) || {},
+    timing: (filter_config && filter_config.timing) || {},
+
+    selectedOverlayId: null
+  });
+},
   setSegments: (segments) => set({ segments }),
   addOverlay: (type = 'image', initial = {}) => {
     const o = { ...defaultOverlay(type), ...initial };
