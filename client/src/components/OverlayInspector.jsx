@@ -2,99 +2,112 @@ import React from "react";
 import { useEditorStore } from "../store/useEditorStore";
 
 export default function OverlayInspector() {
-  const { overlays, selectedOverlayId, updateOverlay, removeOverlay, selectOverlay } = useEditorStore();
+  const { overlays, selectedOverlayId, updateOverlay, removeOverlay, selectOverlay } =
+    useEditorStore();
   const selected = selectedOverlayId ? overlays[selectedOverlayId] : null;
 
   if (!selected) {
     return (
-      <div className="p-4 text-slate-300">
+      <div className="p-4 text-slate-400">
         Select an overlay to edit.
       </div>
     );
   }
 
-  const patch = (partial) => updateOverlay(selected.id, partial);
+  const patch = (p) => updateOverlay(selected.id, p);
+
+  const input = (label, value, onChange, props = {}) => (
+    <div className="mb-3">
+      <label className="text-xs text-slate-400">{label}</label>
+      <input
+        className="w-full bg-slate-800 text-slate-100 rounded px-2 py-1 border border-slate-600"
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        {...props}
+      />
+    </div>
+  );
 
   return (
-    <div className="p-4">
-      <h3 className="font-semibold text-slate-100">Inspector</h3>
-      <div className="text-sm text-slate-300 mb-4">Type: <strong>{selected.type}</strong></div>
+    <div className="p-4 text-slate-200">
+      <h3 className="font-semibold mb-2">Inspector</h3>
+      <div className="text-xs text-slate-400 mb-4">
+        Type: <span className="text-slate-200">{selected.type}</span>
+      </div>
 
-      {/* COMMON: url for media types */}
-      {["image","video","audio"].includes(selected.type) && (
-        <>
-          <label className="text-xs text-slate-300">URL</label>
-          <input className="w-full mb-2" value={selected.url || ""} onChange={e => patch({ url: e.target.value })} />
-        </>
+      {/* IMAGE/VIDEO/AUDIO URL */}
+      {["image", "video", "audio"].includes(selected.type) &&
+        input("URL", selected.url, (v) => patch({ url: v }))}
+
+      {/* SCALE */}
+      {["image", "video"].includes(selected.type) &&
+        input("Scale (ffmpeg style)", selected.scale, (v) => patch({ scale: v }))}
+
+      {["image", "video"].includes(selected.type) &&
+        input(
+          "Scale Factor",
+          selected.scale_factor,
+          (v) => patch({ scale_factor: parseFloat(v) || 1 }),
+          { type: "number", step: "0.01" }
+        )}
+
+      {selected.type === "text" &&
+        input("Text", selected.text, (v) => patch({ text: v }))}
+
+      {selected.type === "text" &&
+        input("Font", selected.font, (v) => patch({ font: v }))}
+
+      {selected.type === "text" &&
+        input("Font Size", selected.fontsize, (v) => patch({ fontsize: parseInt(v) || 48 }),
+        { type: "number" })}
+
+      {/* AUDIO */}
+      {selected.type === "audio" &&
+        input("Volume", selected.volume, (v) => patch({ volume: parseFloat(v) || 0.2 }),
+        { type: "number", step: "0.01", min: 0, max: 1 })}
+
+      {/* COMMON */}
+      {input(
+        "Opacity (0-100)",
+        selected.opacity,
+        (v) => patch({ opacity: parseInt(v) || 100 }),
+        { type: "number", min: 0, max: 100 }
       )}
 
-      {/* IMAGE/VIDEO: scale / scale_factor / colorkey / opacity / offsets / layer */}
-      {["image","video"].includes(selected.type) && (
-        <>
-          <label className="text-xs text-slate-300">Scale (ffmpeg style or leave blank)</label>
-          <input className="w-full mb-2" value={selected.scale || ""} onChange={e => patch({ scale: e.target.value })} />
-          <label className="text-xs text-slate-300">Scale Factor (optional numeric)</label>
-          <input className="w-full mb-2" value={selected.scale_factor ?? 1} onChange={e => patch({ scale_factor: parseFloat(e.target.value) || 1 })} />
-          <label className="text-xs text-slate-300">Colorkey (e.g. black:0.08:0.1)</label>
-          <input className="w-full mb-2" value={selected.colorkey || ""} onChange={e => patch({ colorkey: e.target.value })} />
-        </>
+      {input(
+        "X offset %",
+        selected.x_offset_percent,
+        (v) => patch({ x_offset_percent: parseFloat(v) || 0 }),
+        { type: "number", step: "0.1" }
       )}
 
-      {/* TEXT */}
-      {selected.type === "text" && (
-        <>
-          <label className="text-xs text-slate-300">Text</label>
-          <textarea className="w-full mb-2" rows={3} value={selected.text || ""} onChange={e => patch({ text: e.target.value })} />
-          <label className="text-xs text-slate-300">Font</label>
-          <input className="w-full mb-2" value={selected.font || ""} onChange={e => patch({ font: e.target.value })} />
-          <label className="text-xs text-slate-300">Font color</label>
-          <input className="w-full mb-2" value={selected.fontcolor || "white"} onChange={e => patch({ fontcolor: e.target.value })} />
-          <label className="text-xs text-slate-300">Font size</label>
-          <input className="w-full mb-2" value={selected.fontsize || 48} onChange={e => patch({ fontsize: parseInt(e.target.value) || 48 })} />
-        </>
+      {input(
+        "Y offset % (positive moves down)",
+        selected.y_offset_percent,
+        (v) => patch({ y_offset_percent: parseFloat(v) || 0 }),
+        { type: "number", step: "0.1" }
       )}
 
-      {/* AUDIO / MUSIC */}
-      {selected.type === "audio" && (
-        <>
-          <label className="text-xs text-slate-300">URL</label>
-          <input className="w-full mb-2" value={selected.url || ""} onChange={e => patch({ url: e.target.value })} />
-          <label className="text-xs text-slate-300">Volume (0-1)</label>
-          <input className="w-full mb-2" value={selected.volume ?? 0.2} onChange={e => patch({ volume: parseFloat(e.target.value) || 0.2 })} />
-          <label className="text-xs text-slate-300">Fade In (s)</label>
-          <input className="w-full mb-2" value={selected.fade_in ?? 0} onChange={e => patch({ fade_in: parseFloat(e.target.value) || 0 })} />
-          <label className="text-xs text-slate-300">Fade Out (s)</label>
-          <input className="w-full mb-2" value={selected.fade_out ?? 0} onChange={e => patch({ fade_out: parseFloat(e.target.value) || 0 })} />
-          <label className="text-xs text-slate-300">Scope (all | intro | chapter | segment)</label>
-          <input className="w-full mb-2" value={selected.scope || "all"} onChange={e => patch({ scope: e.target.value })} />
-        </>
-      )}
-
-      {/* COMMON: opacity, offsets, layer */}
-      <label className="text-xs text-slate-300">Opacity (0-100)</label>
-      <input className="w-full mb-2" value={selected.opacity ?? 100} onChange={e => patch({ opacity: parseInt(e.target.value) || 100 })} />
-      <label className="text-xs text-slate-300">X offset %</label>
-      <input className="w-full mb-2" value={selected.x_offset_percent ?? 0} onChange={e => patch({ x_offset_percent: parseFloat(e.target.value) || 0 })} />
-      <label className="text-xs text-slate-300">Y offset % (positive moves down)</label>
-      <input className="w-full mb-2" value={selected.y_offset_percent ?? 0} onChange={e => patch({ y_offset_percent: parseFloat(e.target.value) || 0 })} />
-      <label className="text-xs text-slate-300">Layer</label>
-      <input className="w-full mb-2" value={selected.layer ?? 0} onChange={e => patch({ layer: parseInt(e.target.value) || 0 })} />
-
-      {/* CHAPTER ANIMATION editor */}
-      {selected.type === "chapter_anim" && (
-        <>
-          <label className="text-xs text-slate-300">Enable</label>
-          <input type="checkbox" checked={selected.enable} onChange={e => patch({ enable: !!e.target.checked })} />
-          <label className="text-xs text-slate-300">Mode (intro | full | intro_and_full)</label>
-          <input className="w-full mb-2" value={selected.mode || "intro"} onChange={e => patch({ mode: e.target.value })} />
-          <label className="text-xs text-slate-300">Duration (s)</label>
-          <input className="w-full mb-2" value={selected.duration || 3} onChange={e => patch({ duration: parseFloat(e.target.value) || 3 })} />
-        </>
+      {input(
+        "Layer",
+        selected.layer,
+        (v) => patch({ layer: parseInt(v) || 0 }),
+        { type: "number" }
       )}
 
       <div className="flex gap-2 mt-4">
-        <button className="px-3 py-2 bg-red-600 rounded" onClick={() => { removeOverlay(selected.id); }}>Remove</button>
-        <button className="px-3 py-2 bg-gray-600 rounded" onClick={() => selectOverlay(null)}>Done</button>
+        <button
+          className="px-3 py-1 bg-red-700 rounded"
+          onClick={() => removeOverlay(selected.id)}
+        >
+          Remove
+        </button>
+        <button
+          className="px-3 py-1 bg-slate-700 rounded"
+          onClick={() => selectOverlay(null)}
+        >
+          Done
+        </button>
       </div>
     </div>
   );

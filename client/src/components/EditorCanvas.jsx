@@ -1,6 +1,8 @@
 import React from 'react';
 import { useEditorStore } from '../store/useEditorStore';
 import OverlayToolbar from "./OverlayToolbar";
+import MiniOverlayPreview from "./MiniOverlayPreview";
+
 
 function parseResolution(res) {
   if (!res) return { w: 1920, h: 1080 };
@@ -42,6 +44,7 @@ export default function EditorCanvas() {
   const res = parseResolution(meta?.resolution || '1920:1080');
   const canvasW = 1000; // visual width in px
   const canvasH = Math.round((res.h / res.w) * canvasW);
+  const selected = useEditorStore((s) => s.overlays[s.selectedOverlayId]);
 
   const overlayEntries = Object.entries(overlays || {}).sort((a, b) => ((a[1].layer || 0) - (b[1].layer || 0)));
 
@@ -97,6 +100,9 @@ export default function EditorCanvas() {
 
   return (
     <div className="p-3">
+      <div className="absolute top-2 right-2 w-32 h-32 bg-slate-700/70 rounded border border-slate-500">
+        {selected && <MiniOverlayPreview overlay={selected} />}
+      </div>
       <OverlayToolbar />
       <div style={{ width: canvasW + 16, height: canvasH + 16, borderRadius: 8, overflow: 'hidden', background: '#000', position: 'relative', padding: 8 }}>
         <div style={{ width: canvasW, height: canvasH, position: 'relative', margin: '0 auto', background: '#111' }} ref={containerRef}>
