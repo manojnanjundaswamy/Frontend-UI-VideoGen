@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEditorStore } from '../store/useEditorStore';
+import OverlayToolbar from "./OverlayToolbar";
 
 function parseResolution(res) {
   if (!res) return { w: 1920, h: 1080 };
@@ -96,6 +97,7 @@ export default function EditorCanvas() {
 
   return (
     <div className="p-3">
+      <OverlayToolbar />
       <div style={{ width: canvasW + 16, height: canvasH + 16, borderRadius: 8, overflow: 'hidden', background: '#000', position: 'relative', padding: 8 }}>
         <div style={{ width: canvasW, height: canvasH, position: 'relative', margin: '0 auto', background: '#111' }} ref={containerRef}>
           {renderOverlays}
