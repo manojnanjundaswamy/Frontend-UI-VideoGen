@@ -8,3 +8,40 @@ export function buildFilterConfig(meta = {}, timing = {}, visual = {}, text = {}
     transitions_overlays: transitions || {}
   };
 }
+
+export function splitOverlays(overlays = {}) {
+  const visual = {};
+  const text = {};
+  const audio = {};
+  const transitions = {};
+
+  Object.entries(overlays).forEach(([id, o]) => {
+    if (!o || !o.type) return;
+
+    switch (o.type) {
+      case 'image':
+      case 'video':
+        visual[id] = o;
+        break;
+
+      case 'text':
+        text[id] = o;
+        break;
+
+      case 'music':
+        audio[id] = o;
+        break;
+
+      case 'chapter_anim':
+        transitions[id] = o;
+        break;
+
+      default:
+        visual[id] = o;
+    }
+  });
+
+  return { visual, text, audio, transitions };
+}
+
+

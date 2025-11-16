@@ -11,7 +11,8 @@ export default function FFmpegPreviewPanel() {
   const timing = selectedRow.filter_config ? JSON.parse(selectedRow.filter_config).timing : {};
 
   // Build once using your existing utility
-  const body = buildFilterConfig(meta, timing, overlays, {}, {}); // adapt to your function signature if needed
+  const { visual, text, audio, transitions } = splitOverlays(overlays);
+        const filter_config = buildFilterConfig(meta, timing, visual, text, audio, transitions);// adapt to your function signature if needed
 
   return (
     <div className="p-3">

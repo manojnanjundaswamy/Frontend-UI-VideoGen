@@ -100,7 +100,7 @@ export default function EditorCanvas() {
 
   return (
     <div className="p-3">
-      <div className="absolute top-2 right-2 w-32 h-32 bg-slate-700/70 rounded border border-slate-500">
+      <div className="absolute top-2 right-2 w-28 h-28 bg-slate-700/70 rounded border border-slate-500">
         {selected && <MiniOverlayPreview overlay={selected} />}
       </div>
       <OverlayToolbar />
