@@ -1,152 +1,110 @@
-// EditorCanvas.jsx
-import React, { useEffect, useRef, useState } from "react";
-import { useEditorStore } from "../store/useEditorStore";
+import React from 'react';
+import { useEditorStore } from '../store/useEditorStore';
 
-// helper: parse "1920:1080" or "iw*0.25:ih*0.25" and compute pixel width/height
-function cssScaleFromFFmpeg(scaleStr, naturalW, naturalH) {
-  // fallback
-  if (!scaleStr) return { w: naturalW, h: naturalH };
-
-  // exact W:H (numbers)
-  if (scaleStr.includes(":") && !scaleStr.includes("iw") && !scaleStr.includes("ih")) {
-    const [ws, hs] = scaleStr.split(":").map((s) => Number(s));
-    // if -1 appears, preserve aspect
-    if (ws === -1 && hs > 0) {
-      const newH = hs;
-      const aspect = naturalW / naturalH;
-      const newW = Math.round(newH * aspect);
-      return { w: newW, h: newH };
-    }
-    if (hs === -1 && ws > 0) {
-      const newW = ws;
-      const aspect = naturalW / naturalH;
-      const newH = Math.round(newW / aspect);
-      return { w: newW, h: newH };
-    }
-    if (Number.isFinite(ws) && Number.isFinite(hs)) return { w: ws, h: hs };
-  }
-
-  // iw*X:ih*X
-  if (scaleStr.includes("iw*") && scaleStr.includes("ih*")) {
-    const x = parseFloat(scaleStr.split(":")[0].replace("iw*", "")) || 1;
-    const y = parseFloat(scaleStr.split(":")[1].replace("ih*", "")) || x || 1;
-    return { w: Math.round(naturalW * x), h: Math.round(naturalH * y) };
-  }
-
-  // if nothing matched, return natural
-  return { w: naturalW, h: naturalH };
+function parseResolution(res) {
+  if (!res) return { w: 1920, h: 1080 };
+  const [w, h] = String(res).split(':').map(x => parseInt(x, 10));
+  return { w: w || 1920, h: h || 1080 };
 }
 
-// utility: convert "host.docker.internal" to "localhost" for preview playback
-function toPreviewUrl(url) {
-  if (!url) return url;
-  return url.replace("host.docker.internal", "localhost");
+// convert scale strings used by ffmpeg into a numeric factor for canvas display
+function scaleToFactor(scaleStr, metaRes, intrinsic = { w: 1920, h: 1080 }) {
+  // if scale is like "1920:1080" => factor = 1920 / metaRes.w
+  // if scale is "500:-1" => factor = 500 / intrinsic.w
+  // if scale contains "iw" or "ih" or expressions: fallback to scale_factor property or 1
+  if (!scaleStr) return 1;
+  if (scaleStr.includes('iw') || scaleStr.includes('ih') || scaleStr.includes('*') || scaleStr.includes('/')) {
+    return null; // fallback, caller can handle
+  }
+  const parts = scaleStr.split(':');
+  const sw = parseInt(parts[0], 10);
+  const sh = parseInt(parts[1], 10);
+  if (!isNaN(sw) && !isNaN(sh) && sw > 0) {
+    return sw / metaRes.w;
+  }
+  if (!isNaN(sw) && sw > 0 && sh === -1) {
+    return sw / intrinsic.w;
+  }
+  return 1;
 }
 
 export default function EditorCanvas() {
-  const overlays = useEditorStore((s) => s.overlays);
-  const texts = useEditorStore((s) => s.texts);
-  const meta = useEditorStore((s) => s.meta);
-  const selectedKey = useEditorStore((s) => s.selectedKey);
-  const selectOverlay = useEditorStore((s) => s.selectOverlay);
+  const {
+    overlays,
+    meta,
+    selectedOverlayId,
+    setSelectedOverlayId,
+    setOverlays
+  } = useEditorStore();
 
-  const containerRef = useRef(null);
-  const [assetsMeta, setAssetsMeta] = useState({}); // { key: { naturalW, naturalH } }
+  const containerRef = React.useRef(null);
+  const res = parseResolution(meta?.resolution || '1920:1080');
+  const canvasW = 1000; // visual width in px
+  const canvasH = Math.round((res.h / res.w) * canvasW);
 
-  // load natural sizes for image/video
-  useEffect(() => {
-    Object.entries(overlays).forEach(([k, o]) => {
-      if (!o.url) return;
-      if (assetsMeta[k]) return;
-      const img = new Image();
-      img.onload = () => setAssetsMeta((s) => ({ ...s, [k]: { naturalW: img.naturalWidth, naturalH: img.naturalHeight } }));
-      img.onerror = () => setAssetsMeta((s) => ({ ...s, [k]: { naturalW: 600, naturalH: 400 } }));
-      img.src = toPreviewUrl(o.url);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlays]);
+  const overlayEntries = Object.entries(overlays || {}).sort((a, b) => ((a[1].layer || 0) - (b[1].layer || 0)));
 
-  // render overlays sorted by layer ascending (0 base)
-  const entries = Object.entries({ ...overlays, ...texts }).sort((a, b) => (a[1].layer || 0) - (b[1].layer || 0));
+  // compute onClick selection
+  function onClickOverlay(key) {
+    setSelectedOverlayId(key);
+  }
 
-  // resolution mapping
-  const [resW, resH] = (meta?.resolution || "1920:1080").split(":").map((v) => Number(v));
+  const renderOverlays = overlayEntries.map(([key, o]) => {
+    // compute factor
+    // prefer explicit scale_factor property, otherwise try to parse o.scale (ffmpeg-style)
+    const scaleFactor = o.scale_factor ?? null;
+    const parsedFactor = scaleFactor || scaleToFactor(o.scale, res, { w: 1920, h: 1080 }) || 1;
+    const displayW = Math.round((parsedFactor) * canvasW);
+    const displayH = Math.round((parsedFactor) * canvasH);
+
+    // compute center offset
+    const xPercent = (o.x_offset_percent || 0);
+    const yPercent = (o.y_offset_percent || 0);
+    // x,y relative to center
+    const cx = (canvasW / 2) + (canvasW * (xPercent / 100)) - (displayW / 2);
+    const cy = (canvasH / 2) - (canvasH * (yPercent / 100)) - (displayH / 2);
+
+    const style = {
+      position: 'absolute',
+      left: Math.round(cx) + 'px',
+      top: Math.round(cy) + 'px',
+      width: displayW + 'px',
+      height: displayH + 'px',
+      border: selectedOverlayId === key ? '2px solid #2ac0ff' : '1px solid rgba(255,255,255,0.06)',
+      boxSizing: 'border-box',
+      pointerEvents: 'auto',
+      cursor: 'pointer',
+      opacity: (o.opacity != null ? (o.opacity / 100) : 1)
+    };
+
+    if ((o.type || '').startsWith('video')) {
+      return (
+        <video key={key} style={style} src={o.url} muted loop playsInline onClick={() => onClickOverlay(key)} />
+      );
+    }
+    // default image
+    return (
+      <img
+        key={key}
+        alt={o.key || 'overlay'}
+        src={o.url}
+        style={style}
+        onClick={() => onClickOverlay(key)}
+      />
+    );
+  });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div
-        ref={containerRef}
-        style={{
-          width: 900, // preview canvas fixed width in UI
-          height: Math.round((900 * resH) / resW),
-          background: "#111",
-          position: "relative",
-          overflow: "hidden",
-          borderRadius: 8
-        }}
-      >
-        {/* center origin */}
-        <div style={{ position: "absolute", left: "50%", top: "50%", width: resW, height: resH, transform: "translate(-50%, -50%)" }}>
-          {entries.map(([k, o]) => {
-            const asset = assetsMeta[k] || { naturalW: 600, naturalH: 400 };
-            const { w, h } = cssScaleFromFFmpeg(o.scale, asset.naturalW, asset.naturalH);
-            // compute CSS transform based on center anchor and x_offset_percent/y_offset_percent
-            const xp = (o.x_offset_percent || 0) / 100;
-            const yp = (o.y_offset_percent || 0) / 100;
-            // convert to pixel offset relative to canvas resolution
-            const left = (resW - w) / 2 + resW * xp;
-            const top = (resH - h) / 2 - resH * yp; // note: subtract for positive=y-up
-            const z = (o.layer || 0) + 1000; // ensure overlays on top of canvas
-
-            const commonStyle = {
-              position: "absolute",
-              left,
-              top,
-              width: w,
-              height: h,
-              transformOrigin: "top left",
-              opacity: (o.opacity != null ? (o.opacity / 100) : 1),
-              cursor: "pointer",
-              zIndex: z
-            };
-
-            return o.type === "text" ? (
-              <div
-                key={k}
-                onClick={() => selectOverlay(k)}
-                style={{
-                  ...commonStyle,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: o.fontcolor || "white",
-                  fontSize: (o.fontsize || 48),
-                  fontFamily: "inherit",
-                  textShadow: o.box ? "0 0 6px rgba(0,0,0,0.5)" : undefined,
-                  background: o.box ? (o.boxcolor || "rgba(0,0,0,0.4)") : "transparent",
-                  padding: o.box ? 6 : 0,
-                  whiteSpace: "pre-wrap"
-                }}
-              >
-                {o.text}
-              </div>
-            ) : (
-              <img
-                key={k}
-                src={toPreviewUrl(o.url)}
-                alt={k}
-                onClick={() => selectOverlay(k)}
-                style={commonStyle}
-                draggable={false}
-              />
-            );
-          })}
+    <div className="p-3">
+      <div style={{ width: canvasW + 16, height: canvasH + 16, borderRadius: 8, overflow: 'hidden', background: '#000', position: 'relative', padding: 8 }}>
+        <div style={{ width: canvasW, height: canvasH, position: 'relative', margin: '0 auto', background: '#111' }} ref={containerRef}>
+          {renderOverlays}
+          {/* center guide */}
+          <div style={{ position: 'absolute', left: canvasW/2 - 1, top: 0, bottom: 0, width: 2, background: 'rgba(255,255,255,0.02)' }} />
+          <div style={{ position: 'absolute', top: canvasH/2 - 1, left: 0, right: 0, height: 2, background: 'rgba(255,255,255,0.02)' }} />
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <div>Resolution: {meta.resolution}</div>
-        <div>FPS: {meta.fps}</div>
-      </div>
+      <div className="mt-2 text-sm text-slate-300">Resolution: {meta?.resolution || '1920:1080'} &nbsp; FPS: {meta?.fps || 30}</div>
     </div>
   );
 }
