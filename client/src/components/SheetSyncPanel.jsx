@@ -74,7 +74,7 @@ export default function SheetSyncPanel() {
       };
       const payload = { filter_config: JSON.stringify(filter_config) };
       const sheetName = selectedChannel.sheet_name;
-      const rowIndex = selectedRow._rowIndex ?? selectedRow.rowIndex ?? selectedRow.index; // depends on your server response
+      const rowIndex = selectedRow.row_number ?? selectedRow.rowIndex ?? selectedRow.index; // depends on your server response
       const res = await updateRow(sheetName, rowIndex, payload);
       // update local rows with new filter_config
       const updatedRows = rows.map(r => (r === selectedRow ? { ...selectedRow, filter_config: JSON.stringify(filter_config) } : r));

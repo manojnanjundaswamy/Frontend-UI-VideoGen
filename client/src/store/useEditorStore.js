@@ -64,8 +64,14 @@ export const useEditorStore = create((set, get) => ({
   setSelectedOverlayId: (id) => set({ selectedOverlayId: id }),
 
   // overlay helpers
-  addOverlay: (key, overlay) =>
-    set((s) => ({ overlays: { ...s.overlays, [key]: overlay } })),
+  addOverlay: (overlay) => {
+    const id = overlay.id || `${overlay.type}_${Date.now()}`;
+    set(state => {
+      const overlays = { ...(state.overlays || {}) };
+      overlays[id] = { ...overlay, id };
+      return { overlays };
+    });
+  },
   updateOverlay: (key, patch) =>
     set((s) => ({ overlays: { ...s.overlays, [key]: { ...s.overlays[key], ...patch } } })),
   removeOverlay: (key) =>
