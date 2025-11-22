@@ -1,24 +1,34 @@
-import React, { useState } from 'react';
+// src/components/PresetPanel.jsx
+import React from 'react';
 import useEditorStore from '../store/useEditorStore';
 
 export default function PresetPanel() {
-  const [name, setName] = useState('');
-  const exportFilterConfig = useEditorStore(s => s.exportFilterConfig);
+  const buildFilterConfig = useEditorStore((s) => s.buildFilterConfig);
+  const saveFilterConfigToSheet = useEditorStore((s) => s.saveFilterConfigToSheet);
+  const [presetName, setPresetName] = React.useState('');
 
-  const savePreset = () => {
-    const cfg = exportFilterConfig();
-    // TODO: call n8n to store preset in Google Sheet
-    alert('Preset save requested: ' + name + '\n\n' + JSON.stringify(cfg, null, 2));
+  const handleSavePreset = async () => {
+    const fc = buildFilterConfig();
+    // stub save preset — in your architecture this should POST to Presets sheet or API
+    console.log('Save preset', presetName, fc);
+    alert('Preset saved locally (stub). Replace with backend API.');
   };
 
   return (
-    <div className="bg-slate-800 p-3 rounded mt-4">
-      <h4 className="text-sm font-semibold mb-3">Presets</h4>
-      <div className="text-sm text-slate-400 mb-2">Save Current as Preset</div>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Preset Name" className="w-full p-2 rounded bg-slate-700 mb-3" />
-      <button className="bg-green-600 text-white px-3 py-1 rounded" onClick={savePreset}>Save Preset</button>
-      <div className="mt-3">
-        <button className="bg-slate-600 text-white px-3 py-1 rounded" onClick={() => { const x = exportFilterConfig(); window.open().document.write(`<pre>${JSON.stringify(x, null, 2)}</pre>`); }}>View Generated JSON</button>
+    <div className="mt-6">
+      <h4 className="text-sm text-slate-300 mb-2">Presets</h4>
+      <div className="text-sm text-slate-400 mb-2">No presets</div>
+
+      <div className="mb-2 text-sm text-slate-300">Save Current as Preset</div>
+      <input className="w-full p-2 rounded bg-slate-700 mb-2" placeholder="Preset Name" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
+      <div className="flex gap-2">
+        <button className="px-3 py-2 bg-green-600 rounded" onClick={handleSavePreset}>Save Preset</button>
+        <button className="px-3 py-2 bg-slate-600 rounded" onClick={() => {
+          const fc = buildFilterConfig();
+          // show JSON in a new window for quick debug
+          const w = window.open();
+          w.document.body.innerHTML = `<pre style="white-space:pre-wrap">${JSON.stringify(fc, null, 2)}</pre>`;
+        }}>View Generated JSON</button>
       </div>
     </div>
   );

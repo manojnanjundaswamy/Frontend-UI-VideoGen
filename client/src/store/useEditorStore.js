@@ -1,161 +1,169 @@
 // src/store/useEditorStore.js
-import create from 'zustand';
+import React from "react";
 
 /**
- * Simple id generator (avoids adding uuid dependency)
+ * Simple global store with subscribe/notify and a React hook wrapper.
+ * - state is a plain object
+ * - useEditorStore(selector) returns selected slice
+ * - useEditorStore.getState() returns an API object with methods (for direct usage)
+ *
+ * IMPORTANT: We intentionally keep overlays as an ARRAY (see user's choice).
  */
-function makeId(prefix = 'id') {
-  return `${prefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 10000)}`;
-}
 
-/**
- * Sample row used by loadMockData
- */
-const sampleRow = {
-  row_number: 1,
-  title: 'Atomic Habits Cinematic',
-  status: 'pending',
-  prompt_parsed: [
-    { segment_number: 1, chapter_number: 0, chapter_name: 'Intro — The Power of Small Beginnings', scene_type: 'intro', narration_text: 'Intro text' },
-    { segment_number: 2, chapter_number: 0, chapter_name: 'Seg 2', scene_type: 'intro', narration_text: 'Segment 2 text' }
-  ],
-  filter_config: {
-    meta: {
-      resolution: '1920:1080',
-      fps: 30,
-      default_scale: '600:-1'
-    },
-    timing: { chapter_transition_duration: 3 },
-    visual_overlays: {},
-    text_overlays: {},
-    audio_overlays: {},
-    transitions_overlays: {}
-  }
+let state = {
+  meta: {
+    resolution: "1920:1080",
+    fps: 30,
+    default_scale: "600:-1",
+  },
+  channels: [], // loaded channel list
+  rows: [], // video rows for selected channel
+  segments: [], // parsed segments (from selected row.prompt_json)
+  overlays: [], // array of overlay objects
+  selectedOverlayId: null,
+  selectedChannel: null,
+  selectedRow: null,
+  presets: [],
 };
 
-function makeOverlay(type = 'image', meta = {}) {
-  return {
-    id: makeId('ov'),
+const listeners = new Set();
+
+function setState(patchOrFn) {
+  if (typeof patchOrFn === "function") {
+    state = { ...state, ...patchOrFn(state) };
+  } else {
+    state = { ...state, ...patchOrFn };
+  }
+  listeners.forEach((l) => l());
+}
+
+function subscribe(cb) {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+// helper to generate an id
+function makeId(prefix = "ov") {
+  return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
+}
+
+// helpers operating on state - used by getState() API
+function addOverlay(type = "image") {
+  const id = makeId(type);
+  // reasonable defaults
+  const overlay = {
+    id,
     type,
-    url: '',
-    scale: meta.default_scale || '',
-    scaleFactor: 1,
+    url: "",
+    scale: state.meta.default_scale || "600:-1",
     opacity: 100,
-    colorkey: '',
+    colorkey: "",
     x_offset_percent: 0,
     y_offset_percent: 0,
     layer: 0,
+    // additional fields
     loop: false,
+    start_time: 0,
+    duration: null,
     segment_targets: [],
     scene_types: [],
-    chapter_numbers: []
+    chapter_numbers: [],
+  };
+  setState((s) => ({ overlays: [...s.overlays, overlay], selectedOverlayId: id }));
+  return id;
+}
+
+function updateOverlay(id, patch) {
+  setState((s) => {
+    const overlays = s.overlays.map((o) => (o.id === id ? { ...o, ...patch } : o));
+    return { overlays };
+  });
+}
+
+function removeOverlay(id) {
+  setState((s) => {
+    const overlays = s.overlays.filter((o) => o.id !== id);
+    const selectedOverlayId = s.selectedOverlayId === id ? null : s.selectedOverlayId;
+    return { overlays, selectedOverlayId };
+  });
+}
+
+function selectOverlay(id) {
+  setState({ selectedOverlayId: id });
+}
+
+function setMeta(metaPatch) {
+  setState((s) => ({ meta: { ...s.meta, ...metaPatch } }));
+}
+
+function loadMockData() {
+  // minimal mock so UI shows something — you can remove/replace with real fetch later
+  setState({
+    channels: [
+      { row_number: 5, channel_name: "BookSummary", sheet_name: "BookSummary" },
+      { row_number: 4, channel_name: "TheChampionWays", sheet_name: "TheChampionWays" },
+    ],
+    selectedChannel: 5,
+    rows: [
+      { row_number: 4, title: "Atomic Habits Cinematic", status: "pending" },
+      { row_number: 5, title: "Second video", status: "pending" },
+    ],
+    overlays: [],
+    selectedOverlayId: null,
+    segments: [],
+  });
+
+  // add a sample overlay so canvas isn't empty
+  setTimeout(() => {
+    const id = addOverlay("image");
+    updateOverlay(id, {
+      url: "http://localhost:9000/youtube-automation/BookSummary/assets/AtomiCHabitsBG-croped.PNG",
+      scale: "500:-1",
+      x_offset_percent: 0,
+      y_offset_percent: 0,
+      opacity: 100,
+      layer: 0,
+    });
+    const id2 = addOverlay("image");
+    updateOverlay(id2, {
+      url: "http://localhost:9000/youtube-automation/BookSummary/assets/AtomiCHabitsBG-croped.PNG",
+      scale: "300:-1",
+      x_offset_percent: 20,
+      y_offset_percent: -20,
+      opacity: 90,
+      layer: 1,
+    });
+  }, 50);
+}
+
+// Build API object returned by getState
+function buildAPI() {
+  return {
+    getStateRaw: () => state,
+    addOverlay,
+    updateOverlay,
+    removeOverlay,
+    selectOverlay,
+    setMeta,
+    loadMockData,
+    setState,
+    subscribe,
   };
 }
 
-/**
- * Zustand store
- */
-const useEditorStore = create((set, get) => ({
-  channels: [
-    { channel_id: 'BookSummary', display_name: 'BookSummary — BookSummary', sheet_name: 'BookSummary' }
-  ],
-  selectedChannel: 'BookSummary',
-  rows: [],
-  selectedRow: null,
-  segments: [],
-  overlays: [], // always keep as array
-  selectedOverlayId: null,
-  meta: { resolution: '1920:1080', fps: 30, default_scale: '600:-1' },
+// The React hook that accepts a selector function.
+export default function useEditorStore(selector) {
+  // selector defaults to entire state if not function
+  const sel = typeof selector === "function" ? selector : (s) => s;
 
-  // actions
-  setSelectedChannel: (channelId) => set({ selectedChannel: channelId }),
+  const snapshot = React.useSyncExternalStore(
+    subscribe,
+    () => sel(state),
+    () => sel(state)
+  );
 
-  loadMockData: () => {
-    set({
-      rows: [sampleRow],
-      selectedRow: sampleRow,
-      segments: sampleRow.prompt_parsed,
-      overlays: [], // start empty
-      meta: sampleRow.filter_config.meta || { resolution: '1920:1080', fps: 30, default_scale: '600:-1' }
-    });
-  },
+  return snapshot;
+}
 
-  selectRow: (row) => {
-    const cfg = row.filter_config || {};
-    // normalize visual_overlays to array
-    const visuals = cfg.visual_overlays || {};
-    let overlaysArr = [];
-    if (Array.isArray(visuals)) {
-      overlaysArr = visuals;
-    } else if (visuals && typeof visuals === 'object') {
-      // convert object keyed overlays to array
-      overlaysArr = Object.entries(visuals).map(([k, v], idx) => {
-        return {
-          id: v.id || v.key || makeId('ov'),
-          key: k,
-          ...v
-        };
-      });
-    }
-    // If any text overlays existed, we could convert them as well (for inspector)
-    set({
-      selectedRow: row,
-      segments: row.prompt_parsed || [],
-      overlays: overlaysArr,
-      selectedOverlayId: overlaysArr.length ? overlaysArr[0].id : null,
-      meta: cfg.meta || get().meta
-    });
-  },
-
-  addOverlay: (type) => {
-    const o = makeOverlay(type, get().meta);
-    o.x_offset_percent = 0;
-    o.y_offset_percent = 0;
-    set(state => ({ overlays: [...state.overlays, o], selectedOverlayId: o.id }));
-  },
-
-  updateOverlay: (id, patch) => {
-    set(state => ({
-      overlays: state.overlays.map(o => (o.id === id ? { ...o, ...patch } : o))
-    }));
-  },
-
-  removeOverlay: (id) => {
-    set(state => {
-      const next = state.overlays.filter(o => o.id !== id);
-      return { overlays: next, selectedOverlayId: next.length ? next[0].id : null };
-    });
-  },
-
-  selectOverlay: (id) => set({ selectedOverlayId: id }),
-
-  applyPresetToOverlays: (preset) => {
-    // stub: merging is domain-specific; keep simple replace for now
-    if (!preset || !preset.visual_overlays) return;
-    const visuals = preset.visual_overlays;
-    const overlaysArr = Object.entries(visuals).map(([k, v]) => ({ id: v.id || makeId('ov'), key: k, ...v }));
-    set({ overlays: overlaysArr, selectedOverlayId: overlaysArr.length ? overlaysArr[0].id : null });
-  },
-
-  exportFilterConfig: () => {
-    const s = get();
-    const filter = {
-      meta: s.meta,
-      timing: s.selectedRow?.filter_config?.timing || {},
-      visual_overlays: {},
-      text_overlays: {},
-      audio_overlays: {},
-      transitions_overlays: s.selectedRow?.filter_config?.transitions_overlays || {}
-    };
-    s.overlays.forEach((o, i) => {
-      const key = o.key || `visual_${i}`;
-      // copy overlay fields; keep id as key too
-      const copy = { ...o };
-      delete copy.id;
-      filter.visual_overlays[key] = copy;
-    });
-    return filter;
-  }
-}));
-
-export default useEditorStore;
+// Attach helper accessors so old code like useEditorStore.getState() works:
+useEditorStore.getState = () => buildAPI();

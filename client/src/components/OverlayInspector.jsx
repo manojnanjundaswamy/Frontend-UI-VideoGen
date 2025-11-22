@@ -1,71 +1,183 @@
 // src/components/OverlayInspector.jsx
-import React from 'react';
-import useEditorStore from '../store/useEditorStore';
+import React from "react";
+import useEditorStore from "../store/useEditorStore";
 
-function NumericInput({ label, value, onChange, placeholder }) {
+function NumericField({ label, value, onChange, placeholder }) {
   return (
     <div className="mb-3">
       <label className="block text-sm text-slate-300 mb-1">{label}</label>
       <input
         type="number"
-        value={value ?? ''}
-        onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
-        className="w-full bg-slate-700 text-white p-2 rounded"
+        value={value == null ? "" : value}
+        onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
         placeholder={placeholder}
+        className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
       />
     </div>
   );
 }
 
 export default function OverlayInspector() {
-  // safe overlay list
-  const overlaysRaw = useEditorStore(s => s.overlays);
-  const overlays = Array.isArray(overlaysRaw) ? overlaysRaw : (overlaysRaw ? Object.values(overlaysRaw) : []);
-  const selectedOverlayId = useEditorStore(s => s.selectedOverlayId);
-  const updateOverlay = useEditorStore(s => s.updateOverlay);
-  const removeOverlay = useEditorStore(s => s.removeOverlay);
+  const overlays = useEditorStore((s) => s.overlays || []);
+  const selectedOverlayId = useEditorStore((s) => s.selectedOverlayId);
+  const api = useEditorStore.getState();
 
-  const overlay = overlays.find(o => o.id === selectedOverlayId);
-  if (!overlay) return <div className="text-sm text-slate-400">Select an overlay to edit.</div>;
+  const selected = overlays.find((o) => o.id === selectedOverlayId) || null;
+
+  const setField = (key, val) => {
+    if (!selected) return;
+    api.updateOverlay(selected.id, { [key]: val });
+  };
 
   return (
     <div>
-      <div className="mb-3 text-sm">Type: <strong>{overlay.type}</strong></div>
-
-      <div className="mb-3">
-        <label className="block text-sm text-slate-300 mb-1">URL</label>
-        <input className="w-full bg-slate-700 text-white p-2 rounded" value={overlay.url || ''} onChange={e => updateOverlay(overlay.id, { url: e.target.value })} />
+      <div className="mb-4">
+        <label className="block text-sm text-slate-300 mb-1">Select an overlay to edit.</label>
+        <select
+          value={selectedOverlayId || ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            api.selectOverlay(v || null);
+          }}
+          className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+        >
+          <option value="">-- none --</option>
+          {overlays.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.id} · {o.type}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div className="mb-3">
-        <label className="block text-sm text-slate-300 mb-1">Scale (ffmpeg style or blank)</label>
-        <input className="w-full bg-slate-700 text-white p-2 rounded" value={overlay.scale || ''} onChange={e => updateOverlay(overlay.id, { scale: e.target.value })} placeholder="e.g. 1920:1080 or iw*0.25:ih*0.25" />
-      </div>
+      {!selected && (
+        <div className="text-sm text-slate-500">Select an overlay from the list above or click it on the canvas.</div>
+      )}
 
-      <NumericInput label="Scale Factor (numeric)" value={overlay.scaleFactor} onChange={v => updateOverlay(overlay.id, { scaleFactor: v })} placeholder="1" />
-      <NumericInput label="Opacity (0-100)" value={overlay.opacity} onChange={v => updateOverlay(overlay.id, { opacity: v })} />
-      <NumericInput label="X offset % (positive → right)" value={overlay.x_offset_percent} onChange={v => updateOverlay(overlay.id, { x_offset_percent: v })} />
-      <NumericInput label="Y offset % (positive → up)" value={overlay.y_offset_percent} onChange={v => updateOverlay(overlay.id, { y_offset_percent: v })} />
-      <NumericInput label="Layer (z-index)" value={overlay.layer} onChange={v => updateOverlay(overlay.id, { layer: v })} />
+      {selected && (
+        <div>
+          <div className="text-sm text-slate-400 mb-3">
+            Type: <strong className="text-white">{selected.type}</strong>
+          </div>
 
-      <div className="mb-3">
-        <label className="block text-sm text-slate-300 mb-1">Colorkey (e.g. black:0.08:0.1)</label>
-        <input className="w-full bg-slate-700 text-white p-2 rounded" value={overlay.colorkey || ''} onChange={e => updateOverlay(overlay.id, { colorkey: e.target.value })} />
-      </div>
+          {/* URL */}
+          <div className="mb-3">
+            <label className="block text-sm text-slate-300 mb-1">URL</label>
+            <input
+              type="text"
+              value={selected.url || ""}
+              onChange={(e) => setField("url", e.target.value)}
+              placeholder="http://..."
+              className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+            />
+          </div>
 
-      <div className="mb-3">
-        <label className="block text-sm text-slate-300 mb-1">Segment targets (CSV numbers)</label>
-        <input
-          className="w-full bg-slate-700 text-white p-2 rounded"
-          value={(overlay.segment_targets || []).join(',')}
-          onChange={e => updateOverlay(overlay.id, { segment_targets: e.target.value.split(',').map(s => s.trim()).filter(Boolean).map(Number) })}
-        />
-      </div>
+          {/* Scale (ffmpeg style) */}
+          <div className="mb-3">
+            <label className="block text-sm text-slate-300 mb-1">Scale (ffmpeg style)</label>
+            <input
+              type="text"
+              value={selected.scale || ""}
+              onChange={(e) => setField("scale", e.target.value)}
+              placeholder="1920:1080 or 500:-1"
+              className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+            />
+          </div>
 
-      <div className="flex gap-2 mt-4">
-        <button className="bg-red-600 px-3 py-1 rounded text-sm" onClick={() => removeOverlay(overlay.id)}>Remove</button>
-        <button className="bg-slate-600 px-3 py-1 rounded text-sm">Done</button>
-      </div>
+          {/* Numeric fields */}
+          <NumericField
+            label="Opacity (0-100)"
+            value={selected.opacity}
+            onChange={(v) => setField("opacity", v)}
+          />
+          <NumericField
+            label="X offset % (positive → right, center origin)"
+            value={selected.x_offset_percent}
+            onChange={(v) => setField("x_offset_percent", v)}
+          />
+          <NumericField
+            label="Y offset % (positive → up, center origin)"
+            value={selected.y_offset_percent}
+            onChange={(v) => setField("y_offset_percent", v)}
+          />
+          <NumericField label="Layer (z-index)" value={selected.layer} onChange={(v) => setField("layer", v)} />
+
+          {/* Colorkey */}
+          <div className="mb-3">
+            <label className="block text-sm text-slate-300 mb-1">Colorkey (e.g. black:0.08:0.1)</label>
+            <input
+              type="text"
+              value={selected.colorkey || ""}
+              onChange={(e) => setField("colorkey", e.target.value)}
+              placeholder="black:0.08:0.1"
+              className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+            />
+          </div>
+
+          {/* Text-specific fields */}
+          {selected.type === "text" && (
+            <>
+              <div className="mb-3">
+                <label className="block text-sm text-slate-300 mb-1">Text</label>
+                <input
+                  type="text"
+                  value={selected.text || ""}
+                  onChange={(e) => setField("text", e.target.value)}
+                  placeholder="Caption or title"
+                  className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+                />
+              </div>
+
+              <div className="mb-3">
+                <label className="block text-sm text-slate-300 mb-1">Font (path or family)</label>
+                <input
+                  type="text"
+                  value={selected.font || ""}
+                  onChange={(e) => setField("font", e.target.value)}
+                  placeholder="/app/fonts/ComicNeue-BoldItalic.ttf"
+                  className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+                />
+              </div>
+
+              <NumericField
+                label="Font size"
+                value={selected.fontsize}
+                onChange={(v) => setField("fontsize", v)}
+              />
+              <div className="mb-3">
+                <label className="block text-sm text-slate-300 mb-1">Font color</label>
+                <input
+                  type="text"
+                  value={selected.fontcolor || ""}
+                  onChange={(e) => setField("fontcolor", e.target.value)}
+                  placeholder="white"
+                  className="w-full px-3 py-2 rounded bg-slate-800 text-white border border-slate-700"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-3 mt-4">
+            <button
+              className="px-3 py-2 bg-red-600 rounded text-sm"
+              onClick={() => {
+                api.removeOverlay(selected.id);
+              }}
+            >
+              Remove
+            </button>
+            <button
+              className="px-3 py-2 bg-slate-600 rounded text-sm"
+              onClick={() => {
+                // done: simply deselect
+                api.selectOverlay(null);
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
