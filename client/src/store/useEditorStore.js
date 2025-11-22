@@ -1,123 +1,161 @@
 // src/store/useEditorStore.js
 import create from 'zustand';
-import { devtools } from 'zustand/middleware';
-import { nanoid } from 'nanoid';
 
-export const defaultOverlay = (type = 'image') => {
-  const id = nanoid();
+/**
+ * Simple id generator (avoids adding uuid dependency)
+ */
+function makeId(prefix = 'id') {
+  return `${prefix}_${Date.now().toString(36)}_${Math.floor(Math.random() * 10000)}`;
+}
+
+/**
+ * Sample row used by loadMockData
+ */
+const sampleRow = {
+  row_number: 1,
+  title: 'Atomic Habits Cinematic',
+  status: 'pending',
+  prompt_parsed: [
+    { segment_number: 1, chapter_number: 0, chapter_name: 'Intro — The Power of Small Beginnings', scene_type: 'intro', narration_text: 'Intro text' },
+    { segment_number: 2, chapter_number: 0, chapter_name: 'Seg 2', scene_type: 'intro', narration_text: 'Segment 2 text' }
+  ],
+  filter_config: {
+    meta: {
+      resolution: '1920:1080',
+      fps: 30,
+      default_scale: '600:-1'
+    },
+    timing: { chapter_transition_duration: 3 },
+    visual_overlays: {},
+    text_overlays: {},
+    audio_overlays: {},
+    transitions_overlays: {}
+  }
+};
+
+function makeOverlay(type = 'image', meta = {}) {
   return {
-    id,
-    type, // image | video | text | music | chapter_anim
+    id: makeId('ov'),
+    type,
     url: '',
-    text: type === 'text' ? 'Sample Text' : '',
-    font: '/app/fonts/ComicNeue-BoldItalic.ttf',
-    fontsize: 48,
-    fontcolor: 'white',
-    scale: '', // ffmpeg style e.g. 1920:1080 or iw*0.5:ih*0.5
-    scale_factor: 1,
+    scale: meta.default_scale || '',
+    scaleFactor: 1,
     opacity: 100,
     colorkey: '',
     x_offset_percent: 0,
     y_offset_percent: 0,
     layer: 0,
-    // UI-only preview box (px)
-    preview_w: 300,
-    preview_h: 150,
-    preview_x: 0, // percent relative canvas center (-50..50)
-    preview_y: 0,
-    // selection scope
+    loop: false,
     segment_targets: [],
     scene_types: [],
-    chapter_numbers: [],
-    // loops for video
-    loop: false,
+    chapter_numbers: []
   };
-};
+}
 
-export const useEditorStore = create(devtools((set, get) => ({
-  channels: [], // list of channels
-  selectedChannel: null,
-  rows: [], // rows loaded from sheet
+/**
+ * Zustand store
+ */
+const useEditorStore = create((set, get) => ({
+  channels: [
+    { channel_id: 'BookSummary', display_name: 'BookSummary — BookSummary', sheet_name: 'BookSummary' }
+  ],
+  selectedChannel: 'BookSummary',
+  rows: [],
   selectedRow: null,
-  segments: [], // parsed segments for selected row
-  overlays: {}, // keyed by overlay id
-  overlaysOrder: [], // array of ids in order (z-order)
+  segments: [],
+  overlays: [], // always keep as array
   selectedOverlayId: null,
-  needAudio: true,
+  meta: { resolution: '1920:1080', fps: 30, default_scale: '600:-1' },
+
   // actions
-  setChannels: (channels) => set({ channels }),
-  setSelectedChannel: (ch) => set({ selectedChannel: ch }),
-  setRows: (rows) => set({ rows }),
-  setSelectedRow: (row) => {
-  const filter_config = row?.filter_config ? JSON.parse(row.filter_config) : null;
-  const segments = row?.prompt_json ? JSON.parse(row.prompt_json) : [];
+  setSelectedChannel: (channelId) => set({ selectedChannel: channelId }),
 
-  set({
-    selectedRow: row,
-
-    // segments (IMPORTANT)
-    segments,
-
-    // filter config parts
-    filterConfigRaw: filter_config,
-    overlays: (filter_config && filter_config.visual_overlays) || {},
-    textOverlays: (filter_config && filter_config.text_overlays) || {},
-    audioOverlays: (filter_config && filter_config.audio_overlays) || {},
-    transitions: (filter_config && filter_config.transitions_overlays) || {},
-    meta: (filter_config && filter_config.meta) || {},
-    timing: (filter_config && filter_config.timing) || {},
-
-    selectedOverlayId: null
-  });
-},
-  setSegments: (segments) => set({ segments }),
-  addOverlay: (type = 'image', initial = {}) => {
-    const o = { ...defaultOverlay(type), ...initial };
-    // center small preview
-    o.preview_w = initial.preview_w || 300;
-    o.preview_h = initial.preview_h || 150;
-    o.preview_x = 0;
-    o.preview_y = 0;
-    set((s) => {
-      return {
-        overlays: { ...s.overlays, [o.id]: o },
-        overlaysOrder: [...s.overlaysOrder, o.id],
-        selectedOverlayId: o.id,
-      };
+  loadMockData: () => {
+    set({
+      rows: [sampleRow],
+      selectedRow: sampleRow,
+      segments: sampleRow.prompt_parsed,
+      overlays: [], // start empty
+      meta: sampleRow.filter_config.meta || { resolution: '1920:1080', fps: 30, default_scale: '600:-1' }
     });
-    return o;
   },
+
+  selectRow: (row) => {
+    const cfg = row.filter_config || {};
+    // normalize visual_overlays to array
+    const visuals = cfg.visual_overlays || {};
+    let overlaysArr = [];
+    if (Array.isArray(visuals)) {
+      overlaysArr = visuals;
+    } else if (visuals && typeof visuals === 'object') {
+      // convert object keyed overlays to array
+      overlaysArr = Object.entries(visuals).map(([k, v], idx) => {
+        return {
+          id: v.id || v.key || makeId('ov'),
+          key: k,
+          ...v
+        };
+      });
+    }
+    // If any text overlays existed, we could convert them as well (for inspector)
+    set({
+      selectedRow: row,
+      segments: row.prompt_parsed || [],
+      overlays: overlaysArr,
+      selectedOverlayId: overlaysArr.length ? overlaysArr[0].id : null,
+      meta: cfg.meta || get().meta
+    });
+  },
+
+  addOverlay: (type) => {
+    const o = makeOverlay(type, get().meta);
+    o.x_offset_percent = 0;
+    o.y_offset_percent = 0;
+    set(state => ({ overlays: [...state.overlays, o], selectedOverlayId: o.id }));
+  },
+
   updateOverlay: (id, patch) => {
-    set((s) => {
-      const o = s.overlays[id];
-      if (!o) return {};
-      const updated = { ...o, ...patch };
-      return { overlays: { ...s.overlays, [id]: updated } };
-    });
+    set(state => ({
+      overlays: state.overlays.map(o => (o.id === id ? { ...o, ...patch } : o))
+    }));
   },
+
   removeOverlay: (id) => {
-    set((s) => {
-      const next = { ...s.overlays };
-      delete next[id];
-      return {
-        overlays: next,
-        overlaysOrder: s.overlaysOrder.filter(x => x !== id),
-        selectedOverlayId: s.selectedOverlayId === id ? null : s.selectedOverlayId,
-      };
+    set(state => {
+      const next = state.overlays.filter(o => o.id !== id);
+      return { overlays: next, selectedOverlayId: next.length ? next[0].id : null };
     });
   },
+
   selectOverlay: (id) => set({ selectedOverlayId: id }),
-  reorderOverlays: (newOrder) => set({ overlaysOrder: newOrder }),
-  setNeedAudio: (v) => set({ needAudio: !!v }),
-  reset: () => set({
-    channels: [],
-    selectedChannel: null,
-    rows: [],
-    selectedRow: null,
-    segments: [],
-    overlays: {},
-    overlaysOrder: [],
-    selectedOverlayId: null,
-    needAudio: true
-  })
-})));
+
+  applyPresetToOverlays: (preset) => {
+    // stub: merging is domain-specific; keep simple replace for now
+    if (!preset || !preset.visual_overlays) return;
+    const visuals = preset.visual_overlays;
+    const overlaysArr = Object.entries(visuals).map(([k, v]) => ({ id: v.id || makeId('ov'), key: k, ...v }));
+    set({ overlays: overlaysArr, selectedOverlayId: overlaysArr.length ? overlaysArr[0].id : null });
+  },
+
+  exportFilterConfig: () => {
+    const s = get();
+    const filter = {
+      meta: s.meta,
+      timing: s.selectedRow?.filter_config?.timing || {},
+      visual_overlays: {},
+      text_overlays: {},
+      audio_overlays: {},
+      transitions_overlays: s.selectedRow?.filter_config?.transitions_overlays || {}
+    };
+    s.overlays.forEach((o, i) => {
+      const key = o.key || `visual_${i}`;
+      // copy overlay fields; keep id as key too
+      const copy = { ...o };
+      delete copy.id;
+      filter.visual_overlays[key] = copy;
+    });
+    return filter;
+  }
+}));
+
+export default useEditorStore;

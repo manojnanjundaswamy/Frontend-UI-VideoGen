@@ -1,9 +1,0 @@
-1) Sheet proxy workflow (n8n):
-   - HTTP Request node: /sheet/getAll -> executes Google Sheets query -> returns JSON rows
-   - HTTP Request nodes for /sheet/get and /sheet/update accordingly.
-
-2) Preview workflow:
-   - Webhook (POST /webhook/preview) -> receive { segment, filter_config } -> call your local ffmpeg compose node with low-res settings -> upload to storage -> return { preview_url }
-
-3) Render workflow:
-   - Webhook (POST /webhook/render) -> run long ffmpeg compose with provided filter_config and segment -> return final url.

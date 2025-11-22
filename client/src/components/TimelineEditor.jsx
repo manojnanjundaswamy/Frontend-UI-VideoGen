@@ -1,84 +1,41 @@
-// src/components/TimelineEditor.jsx
 import React from 'react';
-import { useEditorStore } from '../store/useEditorStore';
-import { requestPreview, requestRender } from '../hooks/useN8NPreview';
-import { buildFilterConfig, splitOverlays } from '../utils/ffmpegConfigBuilder';
+import useEditorStore from '../store/useEditorStore';
 
 export default function TimelineEditor() {
-  const { segments, overlays, selectedRow, needAudio, setNeedAudio } = useEditorStore();
-  const [status, setStatus] = React.useState(null);
+  const segments = useEditorStore(s => s.segments);
+  const exportFilterConfig = useEditorStore(s => s.exportFilterConfig);
 
-  if (!segments || !segments.length) {
-    return <div className="text-sm text-slate-400 p-3">Load a row to see segments.</div>;
-  }
-
-  const handlePreview = async (seg) => {
-    setStatus('previewing');
-    try {
-      const meta = (selectedRow && selectedRow.filter_config) ? JSON.parse(selectedRow.filter_config).meta : {};
-      const timing = (selectedRow && selectedRow.filter_config) ? JSON.parse(selectedRow.filter_config).timing : {};
-      
-      const { visual, text, audio, transitions } = splitOverlays(overlays);
-      const filter_config = buildFilterConfig(meta, timing, visual, text, audio, transitions);
-      const res = await requestPreview(seg, filter_config, needAudio);
-      setStatus('preview_ok');
-      if (res.preview_url || (Array.isArray(res.response) && res.response[0]?.file_url)) {
-        const url = res.preview_url || res.response[0].file_url;
-        window.dispatchEvent(new CustomEvent('ffmpeg-preview', { detail: { url } }));
-      }
-    } catch (e) {
-      console.error(e);
-      setStatus('preview_error');
-    }
+  const handlePreview = (seg) => {
+    // for now we just open a window with JSON preview
+    const filter = exportFilterConfig();
+    const payload = { segment: seg, filter_config: filter, need_audio: true };
+    window.open().document.write(`<pre>${JSON.stringify(payload, null, 2)}</pre>`);
   };
 
-  const handleRender = async (seg) => {
-    setStatus('rendering');
-    try {
-      const meta = (selectedRow && selectedRow.filter_config) ? JSON.parse(selectedRow.filter_config).meta : {};
-      const timing = (selectedRow && selectedRow.filter_config) ? JSON.parse(selectedRow.filter_config).timing : {};
-      const { visual, text, audio, transitions } = splitOverlays(overlays);
-      const filter_config = buildFilterConfig(meta, timing, visual, text, audio, transitions);
-      const res = await requestRender(seg, filter_config);
-      setStatus(`render_ok: ${res.output_url || JSON.stringify(res)}`);
-    } catch (e) {
-      console.error(e);
-      setStatus('render_error');
-    }
-  };
+  if (!segments || !segments.length) return <div className="text-sm text-slate-400">Load a row to see segments.</div>;
 
   return (
-    <div className="p-3">
-      <div className="flex items-center gap-2 mb-3">
-        <input
-          id="needAudio"
-          type="checkbox"
-          checked={needAudio}
-          onChange={(e) => setNeedAudio(e.target.checked)}
-        />
-        <label htmlFor="needAudio" className="text-sm text-slate-200">Include Audio in Preview</label>
-      </div>
+    <div>
+      <label className="flex items-center gap-2 mb-3">
+        <input type="checkbox" defaultChecked className="w-4 h-4" /> <span className="text-sm">Include Audio in Preview</span>
+      </label>
 
-      <h4 className="font-semibold mb-2">Timeline</h4>
-      <div className="space-y-2">
-        {segments.map((seg, i) => (
-          <div
-            key={`${seg.segment_number}-${seg.chapter_number}-${seg.scene_type}-${i}`}
-            className="flex items-center justify-between p-3 bg-slate-900 rounded"
-          >
-            <div>
-              <div className="font-medium">Seg {seg.segment_number} • Ch {seg.chapter_number} • {seg.scene_type}</div>
-              <div className="text-xs text-slate-400">{seg.chapter_name}</div>
-            </div>
-            <div className="flex gap-2">
-              <button className="px-3 py-1 bg-sky-600 rounded text-sm" onClick={() => handlePreview(seg)}>Preview</button>
-              <button className="px-3 py-1 bg-emerald-600 rounded text-sm" onClick={() => handleRender(seg)}>Render</button>
+      <div className="space-y-3">
+        {segments.map(seg => (
+          <div key={seg.segment_number} className="bg-slate-700 p-3 rounded">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">Seg {seg.segment_number} • Ch {seg.chapter_number} • {seg.scene_type}</div>
+                <div className="text-xs text-slate-400">{seg.chapter_name}</div>
+              </div>
+              <div className="flex gap-2">
+                <button className="bg-sky-600 px-3 py-1 rounded text-sm" onClick={() => handlePreview(seg)}>Preview</button>
+                <button className="bg-emerald-600 px-3 py-1 rounded text-sm">Render</button>
+              </div>
             </div>
           </div>
         ))}
       </div>
-
-      <div className="mt-4 text-xs text-slate-300">Status: {status}</div>
     </div>
   );
 }
