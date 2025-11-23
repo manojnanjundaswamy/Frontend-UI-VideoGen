@@ -16,6 +16,7 @@ let state = {
     fps: 30,
     default_scale: "600:-1",
   },
+  timing: {}, 
   channels: [], // loaded channel list
   rows: [], // video rows for selected channel
   segments: [], // parsed segments (from selected row.prompt_json)
