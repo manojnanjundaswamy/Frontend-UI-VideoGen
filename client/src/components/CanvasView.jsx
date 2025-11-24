@@ -3,19 +3,14 @@ import React from "react";
 import useEditorStore from "../store/useEditorStore";
 
 /**
- * CanvasView
- * - Respects meta.resolution (e.g. 1920:1080)
- * - Fits into the container while preserving aspect ratio
- * - Renders overlays array (images/videos/text as boxes)
- * - Clicking an overlay selects it (calls store.selectOverlay)
+ * Enhanced CanvasView
+ * - shows image/video/text/music overlays
+ * - highlights overlays that match the current segment
+ * - can toggle overlay visible (stores overlay.visible)
+ * - shows small badges for segment_targets / scene_types
  *
- * Offsets interpretation:
- * - x_offset_percent: 0 => center, positive => right, value is percent of half-width (FFmpeg-like)
- * - y_offset_percent: 0 => center, positive => UP (FFmpeg-style), value is percent of half-height
- *
- * Scale string:
- * - "W:H" where W or H may be -1; we convert W,H (pixels) relative to meta resolution then to canvas px.
- * - If H = -1, approximate using meta aspect ratio.
+ * Note: currently selects "current segment" as the first segment (segments[0]).
+ * Later the TimelineEditor can set a previewSegment index in the store to control this.
  */
 
 function parseResolution(res) {
@@ -24,18 +19,15 @@ function parseResolution(res) {
 }
 
 function parseScaleToPixels(scaleStr, meta, canvasW, canvasH) {
-  // scaleStr like "500:-1" or "1920:1080"
   if (!scaleStr) return { w: Math.round(canvasW * 0.2), h: Math.round(canvasH * 0.2) };
 
   const parts = ("" + scaleStr).split(":");
   const sw = parseInt(parts[0], 10);
   const sh = parseInt(parts[1], 10);
 
-  // meta resolution
   const metaW = meta?.w || 1920;
   const metaH = meta?.h || 1080;
 
-  // compute pixel size relative to canvas
   if (!isNaN(sw) && !isNaN(sh)) {
     if (sw > 0 && sh > 0) {
       const wpx = Math.round((sw / metaW) * canvasW);
@@ -43,7 +35,6 @@ function parseScaleToPixels(scaleStr, meta, canvasW, canvasH) {
       return { w: wpx, h: hpx };
     }
     if (sw > 0 && sh === -1) {
-      // preserve meta aspect ratio
       const wpx = Math.round((sw / metaW) * canvasW);
       const hpx = Math.round((wpx * metaH) / metaW);
       return { w: wpx, h: hpx };
@@ -55,34 +46,47 @@ function parseScaleToPixels(scaleStr, meta, canvasW, canvasH) {
     }
   }
 
-  // fallback - use percentage of canvas
   return { w: Math.round(canvasW * 0.2), h: Math.round(canvasH * 0.2) };
 }
 
+// match() logic ported from n8n Normalize / Create nodes
+function matchOverlayToSegment(o = {}, seg = {}) {
+  if (!o) return false;
+  const hasNoFilter =
+    (!o.segment_targets || (Array.isArray(o.segment_targets) && o.segment_targets.length === 0)) &&
+    (!o.scene_types || (Array.isArray(o.scene_types) && o.scene_types.length === 0)) &&
+    (!o.chapter_numbers || (Array.isArray(o.chapter_numbers) && o.chapter_numbers.length === 0));
+  if (hasNoFilter) return true;
+  if (Array.isArray(o.segment_targets) && o.segment_targets.includes(seg.segment_number)) return true;
+  if (Array.isArray(o.scene_types) && o.scene_types.includes(seg.scene_type)) return true;
+  if (Array.isArray(o.chapter_numbers) && o.chapter_numbers.includes(seg.chapter_number)) return true;
+  return false;
+}
+
 export default function CanvasView() {
-  // select needed slices
   const overlays = useEditorStore((s) => s.overlays || []);
   const selectedOverlayId = useEditorStore((s) => s.selectedOverlayId);
   const selectOverlay = useEditorStore.getState().selectOverlay;
+  const updateOverlay = useEditorStore.getState().updateOverlay;
   const meta = useEditorStore((s) => s.meta || { resolution: "1920:1080", fps: 30 });
+  const segments = useEditorStore((s) => s.segments || []);
 
-  // parse meta resolution
+  // current segment = first segment by default
+  const currentSegment = (segments && segments.length > 0) ? segments[0] : null;
+
   const metaRes = parseResolution(meta.resolution);
 
-  // refs and internal size
   const containerRef = React.useRef(null);
   const [size, setSize] = React.useState({ width: 1000, height: 500 });
 
-  // recompute canvas fit on resize
   React.useEffect(() => {
     function computeSize() {
       const el = containerRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      // compute max size that preserves aspect ratio metaRes.w:metaRes.h
       const containerW = rect.width;
       const containerH = rect.height;
-      const metaRatio = metaRes.w / metaRes.h;
+      const metaRatio = (metaRes.w && metaRes.h) ? metaRes.w / metaRes.h : 16 / 9;
       let width = containerW;
       let height = Math.round(containerW / metaRatio);
       if (height > containerH) {
@@ -96,10 +100,7 @@ export default function CanvasView() {
     return () => window.removeEventListener("resize", computeSize);
   }, [metaRes.w, metaRes.h]);
 
-  // helper: convert overlay center-percent coords -> canvas pixels
   function overlayPositionPx(o, overlayPixelSize) {
-    // percent values: x_offset_percent, y_offset_percent
-    // interpretation: percent relative to half-range. 100% -> full half width.
     const xPercent = Number(o.x_offset_percent || 0);
     const yPercent = Number(o.y_offset_percent || 0);
 
@@ -107,26 +108,27 @@ export default function CanvasView() {
     const cy = size.height / 2;
 
     const x = cx + (xPercent / 100) * (size.width / 2);
-    const y = cy - (yPercent / 100) * (size.height / 2); // FFmpeg positive up -> subtract
+    const y = cy - (yPercent / 100) * (size.height / 2);
 
-    // overlayPixelSize gives width/height, we want top-left for absolute positioning
     const left = Math.round(x - overlayPixelSize.w / 2);
     const top = Math.round(y - overlayPixelSize.h / 2);
 
-    // clamp so overlay remains visible inside canvas
     const clampedLeft = Math.max(Math.min(left, size.width - 4), -4);
     const clampedTop = Math.max(Math.min(top, size.height - 4), -4);
 
     return { left: clampedLeft, top: clampedTop, centerX: Math.round(x), centerY: Math.round(y) };
   }
 
-  // sort overlays by layer
+  // sort overlays by layer (lowest first)
   const overlaysSorted = [...overlays].sort((a, b) => (a.layer || 0) - (b.layer || 0));
 
   return (
     <div className="w-full" style={{ minHeight: 360 }}>
       <div className="mb-2 text-sm text-slate-300">
         Resolution: <strong>{meta.resolution}</strong> &nbsp; FPS: <strong>{meta.fps}</strong>
+        {currentSegment && (
+          <span className="ml-4 text-slate-400">• Preview Segment: <strong>#{currentSegment.segment_number} {currentSegment.scene_type}</strong></span>
+        )}
       </div>
 
       <div
@@ -138,10 +140,9 @@ export default function CanvasView() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          padding: 1,
+          padding: 12,
         }}
       >
-        {/* center area sized to fit meta resolution */}
         <div
           className="relative"
           style={{
@@ -160,14 +161,15 @@ export default function CanvasView() {
           )}
 
           {overlaysSorted.map((o) => {
-            // compute size in px for this canvas
             const targetPx = parseScaleToPixels(o.scale || meta.default_scale, metaRes, size.width, size.height);
             const pos = overlayPositionPx(o, targetPx);
             const isSelected = selectedOverlayId === o.id;
-
-            // style common
-            const borderColor = isSelected ? "rgba(56,189,248,0.9)" : "rgba(255,255,255,0.06)";
-            const opacity = (o.opacity == null ? 100 : Number(o.opacity)) / 100;
+            const applies = currentSegment ? matchOverlayToSegment(o, currentSegment) : true;
+            const visible = o.visible === undefined ? true : !!o.visible;
+            const borderColor = isSelected ? "rgba(56,189,248,0.95)" : "rgba(255,255,255,0.06)";
+            const baseOpacity = (o.opacity == null ? 100 : Number(o.opacity)) / 100;
+            // if overlay doesn't match segment, dim it and add badge
+            const displayOpacity = visible ? (applies ? baseOpacity : Math.max(0.18, baseOpacity * 0.35)) : 0.06;
 
             return (
               <div
@@ -189,19 +191,73 @@ export default function CanvasView() {
                   alignItems: "center",
                   justifyContent: "center",
                   overflow: "hidden",
-                  opacity: opacity,
+                  opacity: displayOpacity,
                 }}
               >
-                {/* render type */}
+                {/* Top-right overlay controls */}
+                <div style={{ position: "absolute", top: 6, right: 6, zIndex: 60, display: "flex", gap: 6 }}>
+                  {/* visibility toggle */}
+                  <button
+                    title={visible ? "Hide overlay" : "Show overlay"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateOverlay(o.id, { visible: !visible });
+                    }}
+                    className="text-xs px-2 py-1 rounded"
+                    style={{
+                      background: "rgba(0,0,0,0.45)",
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    {visible ? "👁" : "🙈"}
+                  </button>
+                </div>
+
+                {/* badges (bottom-left) */}
+                <div style={{ position: "absolute", left: 6, bottom: 6, zIndex: 60, display: "flex", gap: 6, alignItems: "center" }}>
+                  {/* type badge */}
+                  <div style={{ fontSize: 11, padding: "4px 6px", background: "rgba(0,0,0,0.5)", borderRadius: 6 }}>
+                    {o.type}
+                  </div>
+
+                  {/* segment_targets badge */}
+                  {Array.isArray(o.segment_targets) && o.segment_targets.length > 0 && (
+                    <div style={{ fontSize: 11, padding: "4px 6px", background: "rgba(15,23,42,0.6)", borderRadius: 6 }}>
+                      segs: {o.segment_targets.join(",")}
+                    </div>
+                  )}
+
+                  {/* scene_types badge */}
+                  {Array.isArray(o.scene_types) && o.scene_types.length > 0 && (
+                    <div style={{ fontSize: 11, padding: "4px 6px", background: "rgba(15,23,42,0.6)", borderRadius: 6 }}>
+                      scenes: {o.scene_types.join(",")}
+                    </div>
+                  )}
+                </div>
+
+                {/* render content depending on type */}
                 {o.type === "image" && o.url ? (
-                  // img scaled to fit overlay box
                   <img src={o.url} alt={o.id} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : o.type === "video" && o.url ? (
                   <video src={o.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted loop />
                 ) : o.type === "text" ? (
-                  <div style={{ color: o.fontcolor || "white", fontSize: o.fontsize || 24 }}>{o.text || "Text"}</div>
+                  <div style={{
+                    color: o.fontcolor || "white",
+                    fontSize: (o.fontsize || 24),
+                    padding: 6,
+                    textAlign: "center",
+                    lineHeight: 1.1
+                  }}>
+                    {o.text || "Text"}
+                  </div>
                 ) : o.type === "music" ? (
-                  <div style={{ color: "white", padding: 8 }}>🎵 Music: {o.url ? "attached" : "no url"}</div>
+                  <div style={{ color: "white", padding: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontSize: 24 }}>🎵</div>
+                    <div style={{ fontSize: 12 }}>
+                      {o.id || "music"}{o.volume != null ? ` • vol ${o.volume}` : ""}
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ color: "white", fontSize: 12 }}>{o.type}</div>
                 )}

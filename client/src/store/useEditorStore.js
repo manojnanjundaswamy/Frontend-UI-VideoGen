@@ -181,26 +181,26 @@ function loadMockData() {
   setState();
 
   // add a sample overlay so canvas isn't empty
-  // setTimeout(() => {
-  //   const id = addOverlay("image");
-  //   updateOverlay(id, {
-  //     url: "http://localhost:9000/youtube-automation/BookSummary/assets/AtomiCHabitsBG-croped.PNG",
-  //     scale: "500:-1",
-  //     x_offset_percent: 0,
-  //     y_offset_percent: 0,
-  //     opacity: 100,
-  //     layer: 0,
-  //   });
-  //   const id2 = addOverlay("image");
-  //   updateOverlay(id2, {
-  //     url: "http://localhost:9000/youtube-automation/BookSummary/assets/AtomiCHabitsBG-croped.PNG",
-  //     scale: "300:-1",
-  //     x_offset_percent: 20,
-  //     y_offset_percent: -20,
-  //     opacity: 90,
-  //     layer: 1,
-  //   });
-  // }, 50);
+  setTimeout(() => {
+    const id = addOverlay("image");
+    updateOverlay(id, {
+      url: "http://localhost:9000/youtube-automation/BookSummary/assets/AtomiCHabitsBG-croped.PNG",
+      scale: "500:-1",
+      x_offset_percent: 0,
+      y_offset_percent: 0,
+      opacity: 100,
+      layer: 0,
+    });
+    const id2 = addOverlay("image");
+    updateOverlay(id2, {
+      url: "http://localhost:9000/youtube-automation/BookSummary/assets/AtomiCHabitsBG-croped.PNG",
+      scale: "300:-1",
+      x_offset_percent: 20,
+      y_offset_percent: -20,
+      opacity: 90,
+      layer: 1,
+    });
+  }, 50);
 }
 
 // Build API object returned by getState
