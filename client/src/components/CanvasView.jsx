@@ -138,7 +138,7 @@ export default function CanvasView() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          padding: 12,
+          padding: 1,
         }}
       >
         {/* center area sized to fit meta resolution */}

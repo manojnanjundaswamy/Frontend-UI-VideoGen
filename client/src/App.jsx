@@ -22,7 +22,7 @@ export default function App() {
         {/* LEFT SIDEBAR */}
         <aside className="col-span-3 space-y-6">
           <div>
-            <h2 className="text-xl font-semibold mb-2">Sheet Projects</h2>
+            <h2 className="text-xl font-semibold mb-2">Render Configurator</h2>
             <ChannelSelect />
             <SheetRowList className="mt-4" />
           </div>

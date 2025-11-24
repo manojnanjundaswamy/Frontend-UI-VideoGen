@@ -28,6 +28,7 @@ export async function getRowsForChannel(sheetName) {
 
 export async function updateRow(sheetName, rowIndex, payload) {
   // payload is object { filter_config: JSON-string or other columns to update }
+  console.log("Updating row", sheetName, rowIndex, payload);
   const res = await fetch(`${base}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -37,6 +38,7 @@ export async function updateRow(sheetName, rowIndex, payload) {
     const txt = await res.text();
     throw new Error(`Failed to update row: ${txt}`);
   }
+  console.log("Update row response", res);
   return res.json();
 }
 

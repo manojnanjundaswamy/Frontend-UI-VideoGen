@@ -1,19 +1,24 @@
-import React from "react";
+import React, { useEffect } from "react";
 import useEditorStore from "../store/useEditorStore";
 
 export default function ChannelSelector() {
-  const channels = useEditorStore((s) => s.channels);        // SAFE selector
-  const selectedChannel = useEditorStore((s) => s.selectedChannel); 
-  const setSelectedChannel = useEditorStore((s) => s.setSelectedChannel);
-  const loadRowsForChannel = useEditorStore((s) => s.loadRowsForChannel);
+  const channels = useEditorStore((s) => s.channels);
+  const selectedChannel = useEditorStore((s) => s.selectedChannel);
+  const setSelectedChannel = useEditorStore.getState().setState;
+
+  const loadChannels = useEditorStore.getState().loadChannels;
+  const loadRowsForChannel = useEditorStore.getState().loadRowsForChannel;
+
+  useEffect(() => {
+    loadChannels();
+  }, []);
 
   const handleChange = (e) => {
-    const channelName = e.target.value;
+    const channel = e.target.value;
+    setSelectedChannel({ selectedChannel: channel });
 
-    setSelectedChannel(channelName);
-
-    if (channelName && channelName !== "-- Select channel --") {
-      loadRowsForChannel(channelName);
+    if (channel) {
+      loadRowsForChannel(channel);
     }
   };
 
@@ -25,16 +30,13 @@ export default function ChannelSelector() {
         value={selectedChannel ?? ""}
         onChange={handleChange}
       >
-        <option key="none" value="">
-          -- Select channel --
-        </option>
+        <option value="">-- Select channel --</option>
 
-        {channels.length > 0 &&
-          channels.map((c) => (
-            <option key={c.row_number} value={c.channel_name}>
-              {c.channel_name}
-            </option>
-          ))}
+        {channels.map((c) => (
+          <option key={c.row_number} value={c.channel_name}>
+            {c.channel_name}
+          </option>
+        ))}
       </select>
     </div>
   );

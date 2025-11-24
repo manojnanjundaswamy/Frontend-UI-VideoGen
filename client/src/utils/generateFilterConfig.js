@@ -1,21 +1,21 @@
-// src/utils/generateFilterConfig.js
-
-export default function generateFilterConfig(state) {
-  // Ensure overlays is always an array
+export default function generateFullConfig(state) {
   const overlays = Array.isArray(state.overlays) ? state.overlays : [];
+
+  const visual = overlays.filter(o => o.type === "image" || o.type === "video");
+  const texts  = overlays.filter(o => o.type === "text");
+  const audios = overlays.filter(o => o.type === "music");
+  const trans  = overlays.filter(o => o.type === "chapter");
 
   return {
     meta: state.meta || {},
     timing: state.timing || {},
 
-    visual_overlays: overlays.filter(
-      (o) => o.type === "image" || o.type === "video"
-    ),
+    visual_overlays: visual,
+    text_overlays: texts,
+    audio_overlays: audios,
+    transitions_overlays: trans,
 
-    text_overlays: overlays.filter((o) => o.type === "text"),
-
-    audio_overlays: overlays.filter((o) => o.type === "music"),
-
-    transitions_overlays: overlays.filter((o) => o.type === "chapter"),
+    caption: state.caption_config || {},
+    motion_defaults: state.motion_defaults || {}
   };
 }
