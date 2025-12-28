@@ -1,19 +1,12 @@
-// src/components/TimelineEditor.jsx
-import React from "react";
+import React, { useState } from "react";
 import useEditorStore from "../store/useEditorStore";
 import generateFullConfig from "../utils/generateFilterConfig";
 import { requestPreview, requestRender } from "../hooks/useN8NPreview";
-
-/**
- * NEW Timeline Editor
- * - lets user pick preview segment (Canvas updates live)
- * - shows overlays that affect each segment
- * - click overlay → open inspector
- * - toggle overlay visibility
- */
+import { Play, Film, Layers, Image as ImageIcon, Type, Music, Loader2, Eye } from 'lucide-react';
+import Button from "./ui/Button";
+import VideoModal from "./ui/VideoModal";
 
 function matchOverlayToSegment(o = {}, seg = {}) {
-  if (!o) return false;
   const noFilters =
     (!o.segment_targets || o.segment_targets.length === 0) &&
     (!o.scene_types || o.scene_types.length === 0) &&
@@ -31,20 +24,76 @@ export default function TimelineEditor() {
   const segments = useEditorStore((s) => s.segments || []);
   const overlays = useEditorStore((s) => s.overlays || []);
   const previewIndex = useEditorStore((s) => s.previewSegmentIndex || 0);
+  const segmentPreviews = useEditorStore((s) => s.segmentPreviews || {});
 
   const setPreviewIndex = useEditorStore.getState().setPreviewSegmentIndex;
   const selectOverlay = useEditorStore.getState().selectOverlay;
-  const updateOverlay = useEditorStore.getState().updateOverlay;
+  const setSegmentPreviewStatus = useEditorStore.getState().setSegmentPreviewStatus;
 
   const rawState = useEditorStore.getState().getStateRaw();
 
-  const doPreview = async (seg) => {
+  // Preview Options State
+  const [previewOptions, setPreviewOptions] = useState({
+    needAudio: true,
+    autoBackground: false
+  });
+
+  const [playingVideoUrl, setPlayingVideoUrl] = useState(null);
+
+  // Get full channel object for context
+  const channels = useEditorStore(s => s.channels || []);
+  const selectedChannelName = useEditorStore(s => s.selectedChannel);
+  const currentChannel = channels.find(c => c.channel_name === selectedChannelName) || {};
+
+  const doPreview = async (seg, idx) => {
+    // Set Loading
+    setSegmentPreviewStatus(idx, { loading: true, error: null });
+
     try {
       const filterConfig = generateFullConfig(rawState);
-      const response = await requestPreview(seg, filterConfig, true);
+      const { needAudio, autoBackground } = previewOptions;
+
+      // Pass channel details as context (bucket, voice_id, etc.)
+      const context = {
+        channel_name: currentChannel.channel_name || "default",
+        bucket_name: currentChannel.bucket_name || "youtube-automation",
+        workspace_folder: currentChannel.workspace_folder || "Previews",
+        default_voice: currentChannel.default_voice || null,
+        voice_reference: currentChannel.voice_reference || null,
+        s3_url: currentChannel.s3_url || "http://host.docker.internal:9000"
+      };
+
+      const response = await requestPreview(seg, filterConfig, needAudio, autoBackground, context);
       console.log("Preview result:", response);
-      alert("Preview started. Check n8n workflow.");
+
+      // Assume response.id contains filename or response is the object from compose
+      // If response is the compose request body output, we might assume the ID is what we constructed.
+      // BUT, usually n8n returns the response of the last node.
+      // If the last node is MergeImageAndAudio, check its returns.
+      // Assuming we can construct the URL if success.
+
+      // Construct URL:
+      // http://localhost:9000/youtube-automation/Previews/chX_segY_type.mp4 
+      // Need to respect channel/bucket from context if possible, or use standard
+
+      // Actually, looking at ffmpeg_proxy.json, the output id is like:
+      // ch{seg.chapter_number}_seg{seg.segment_number}_{seg.scene_type}.mp4
+      // And the compose service usually puts it in the workspace folder.
+
+      // Let's rely on constructing it or if response has it.
+      // For now, construct based on convention as the n8n logic defines it.
+
+      const filename = `ch${seg.chapter_number ?? 0}_seg${seg.segment_number ?? 0}_${seg.scene_type ?? "seg"}.mp4`;
+
+      // Constructing Localhost URL for MinIO
+      // Ensure we use localhost port 9000 instead of host.docker.internal
+      const videoUrl = `http://localhost:9000/${context.bucket_name}/${context.channel_name}/${context.workspace_folder}/${filename}`;
+
+      setSegmentPreviewStatus(idx, { loading: false, url: videoUrl });
+
     } catch (err) {
+      console.error(err);
+      setSegmentPreviewStatus(idx, { loading: false, error: err.message });
       alert("Preview failed: " + err.message);
     }
   };
@@ -61,14 +110,53 @@ export default function TimelineEditor() {
   };
 
   if (!segments.length) {
-    return <div className="text-sm text-slate-400">Load a row to see segments.</div>;
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-slate-500 border border-dashed border-slate-800 rounded-lg bg-slate-900/50">
+        <Film className="w-12 h-12 mb-4 opacity-50" />
+        <p>No segments loaded</p>
+        <p className="text-sm">Import content to get started</p>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <h4 className="font-semibold mb-3">Timeline</h4>
+    <div className="space-y-4">
+      <VideoModal url={playingVideoUrl} onClose={() => setPlayingVideoUrl(null)} />
 
-      <div className="space-y-4">
+      <div className="flex items-center justify-between px-1">
+        <h4 className="font-semibold text-slate-200 flex items-center gap-2">
+          <Layers className="w-4 h-4 text-indigo-500" />
+          Timeline
+        </h4>
+
+        <div className="flex items-center gap-4">
+          {/* Options Toggles */}
+          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+            <input
+              type="checkbox"
+              checked={previewOptions.needAudio}
+              onChange={e => setPreviewOptions(p => ({ ...p, needAudio: e.target.checked }))}
+              className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
+            />
+            With Audio
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
+            <input
+              type="checkbox"
+              checked={previewOptions.autoBackground}
+              onChange={e => setPreviewOptions(p => ({ ...p, autoBackground: e.target.checked }))}
+              className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
+            />
+            Auto BG (Pexels)
+          </label>
+
+          <div className="w-px h-4 bg-white/10 mx-1"></div>
+
+          <span className="text-xs text-slate-500">{segments.length} segments</span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
         {segments.map((seg, idx) => {
           const isActive = idx === previewIndex;
 
@@ -79,83 +167,113 @@ export default function TimelineEditor() {
           return (
             <div
               key={idx}
-              className={`p-3 rounded border ${
-                isActive ? "border-sky-500 bg-slate-800" : "border-slate-700 bg-slate-900"
-              }`}
+              className={`
+                group relative p-3 rounded-lg border transition-all duration-200 cursor-pointer
+                ${isActive
+                  ? "bg-indigo-900/10 border-indigo-500/30 ring-1 ring-indigo-500/20"
+                  : "bg-slate-900/40 border-white/5 hover:border-slate-700 hover:bg-slate-900/60"
+                }
+              `}
+              onClick={() => setPreviewIndex(idx)}
             >
+              {/* SEGMENT MARKER */}
+              <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg transition-colors
+                 ${isActive ? 'bg-indigo-500' : 'bg-transparent group-hover:bg-slate-700'}
+              `} />
+
               {/* SEGMENT HEADER */}
-              <div className="flex justify-between items-center cursor-pointer"
-                   onClick={() => setPreviewIndex(idx)}>
-                <div>
-                  <div className="font-medium">
-                    Seg {seg.segment_number} • Ch {seg.chapter_number} • {seg.scene_type}
+              <div className="flex justify-between items-start pl-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-slate-500">#{seg.segment_number}</span>
+                    <span className={`text-sm font-medium ${isActive ? 'text-indigo-200' : 'text-slate-300'}`}>
+                      {seg.scene_type}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-white/5">
+                      Ch {seg.chapter_number}
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    {seg.chapter_name || seg.narration_text?.slice(0, 80)}
+                  <div className="text-xs text-slate-500 line-clamp-2 max-w-[280px] leading-relaxed">
+                    {seg.chapter_name || seg.narration_text}
                   </div>
                 </div>
 
-                <div className="flex gap-2">
-                  <button
-                    className="px-3 py-1 bg-sky-600 rounded text-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      doPreview(seg);
-                    }}
-                  >
-                    Preview
-                  </button>
-
-                  <button
-                    className="px-3 py-1 bg-emerald-600 rounded text-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      doRender(seg);
-                    }}
-                  >
-                    Render
-                  </button>
+                <div className="flex gap-1 items-center">
+                  {/* PREVIEW STATUS / ACTIONS */}
+                  {segmentPreviews[idx]?.loading ? (
+                    <div className="p-2">
+                      <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                    </div>
+                  ) : segmentPreviews[idx]?.url ? (
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-900/20"
+                        title="Watch Generated Preview"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          console.log("Playing preview for segment:", segmentPreviews);
+                          console.log(segmentPreviews[idx].url);
+                          setPlayingVideoUrl(segmentPreviews[idx].url);
+                        }}
+                      >
+                        <Eye className="w-3.5 h-3.5 fill-current" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-slate-400 hover:text-indigo-300"
+                        title="Regenerate Preview"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          doPreview(seg, idx);
+                        }}
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title="Preview"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          doPreview(seg, idx);
+                        }}
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* OVERLAYS LIST */}
+              {/* OVERLAYS MINI-LIST */}
               {matchingSorted.length > 0 && (
-                <div className="mt-3 ml-2 space-y-1">
-                  <div className="text-xs text-slate-400 mb-1">Overlays applied:</div>
-
+                <div className="mt-3 pl-3 pt-3 border-t border-white/5 flex flex-wrap gap-1.5">
                   {matchingSorted.map((o) => {
                     const visible = o.visible === undefined ? true : !!o.visible;
                     return (
                       <div
                         key={o.id}
-                        className="flex items-center justify-between bg-slate-800 rounded px-2 py-1"
+                        className={`
+                           flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] border transition-colors
+                           ${visible ? 'bg-slate-800 text-slate-300 border-white/5' : 'bg-slate-900 text-slate-600 border-transparent decoration-slice'}
+                        `}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectOverlay(o.id);
+                        }}
                       >
-                        <div
-                          className="flex items-center gap-2 cursor-pointer"
-                          onClick={() => selectOverlay(o.id)}
-                        >
-                          <span className="text-lg">
-                            {o.type === "image" && "🖼️"}
-                            {o.type === "video" && "🎞️"}
-                            {o.type === "text" && "✏️"}
-                            {o.type === "music" && "🎵"}
-                          </span>
-
-                          <span className="text-sm">
-                            {o.id} <span className="text-slate-500">(layer {o.layer})</span>
-                          </span>
-                        </div>
-
-                        <button
-                          className="text-xs px-2 py-1 rounded"
-                          style={{
-                            background: "rgba(0,0,0,0.4)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                          }}
-                          onClick={() => updateOverlay(o.id, { visible: !visible })}
-                        >
-                          {visible ? "👁" : "🙈"}
-                        </button>
+                        {o.type === "image" && <ImageIcon className="w-3 h-3" />}
+                        {o.type === "video" && <Film className="w-3 h-3" />}
+                        {o.type === "text" && <Type className="w-3 h-3" />}
+                        {o.type === "music" && <Music className="w-3 h-3" />}
+                        <span className="max-w-[80px] truncate">{o.id}</span>
                       </div>
                     );
                   })}

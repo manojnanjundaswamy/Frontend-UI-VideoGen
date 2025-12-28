@@ -1,68 +1,47 @@
 // lightweight Sheets API helper - adapt endpoints to backend
+import axios from 'axios';
+
 const API_BASE = '/api'; // update to your server if necessary
 const base = import.meta.env.VITE_SHEETS_API_URL || API_BASE;
+
+const api = axios.create({
+  headers: { 'Content-Type': 'application/json' }
+});
+
 export async function getChannels() {
   // expects the server to read the "Channel config" sheet and return array of rows
-  const res = await fetch(`${base}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'getAll', type: 'channels' })
-  });
-  if (!res.ok) throw new Error('Failed to load channels');
-  return res.json();
+  try {
+    const res = await api.post(`${base}`, { action: 'getAll', type: 'channels' });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to load channels: ${err.message}`);
+  }
 }
 
 export async function getRowsForChannel(sheetName) {
   // expects server to return rows array for that sheet
-  const res = await fetch(`${base}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'getAll', type: 'videos', channel_name: sheetName })
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Failed to fetch rows: ${txt}`);
+  try {
+    const res = await api.post(`${base}`, { action: 'getAll', type: 'videos', channel_name: sheetName });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to fetch rows: ${err.message}`);
   }
-  return res.json();
 }
 
 export async function updateRow(sheetName, rowIndex, payload) {
   // payload is object { filter_config: JSON-string or other columns to update }
   console.log("Updating row", sheetName, rowIndex, payload);
-  const res = await fetch(`${base}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'update', type: 'videos', channel_name: sheetName, rowIndex, payload })
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Failed to update row: ${txt}`);
+  try {
+    const res = await api.post(`${base}`, {
+      action: 'update',
+      type: 'videos',
+      channel_name: sheetName,
+      rowIndex,
+      payload
+    });
+    console.log("Update row response", res.data);
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to update row: ${err.message}`);
   }
-  console.log("Update row response", res);
-  return res.json();
 }
-
-
-
-// import axios from 'axios';
-
-// const base = import.meta.env.VITE_SHEETS_API_URL || '/sheet';
-
-// export async function getAllRows() {
-//   // your n8n sheet endpoint should respond to /sheet?action=getAll or /sheet/getAll
-//   const url = `${base}?action=getAll`;
-//   const res = await axios.post(url,{ action:"getAll", payload: {} });
-//   return res.data;
-// }
-
-// export async function getRow(id) {
-//   const url = `${base}?action=get?id=${encodeURIComponent(id)}`;
-//   const res = await axios.post(url);
-//   return res.data;
-// }
-
-// export async function updateRow(id, payload) {
-//   const url = `${base}?action=update`;
-//   const res = await axios.post(url, { id, payload });
-//   return res.data;
-// }

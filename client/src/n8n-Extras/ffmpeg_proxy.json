@@ -1,0 +1,882 @@
+{
+  "name": "ffmpeg_proxy",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8004/tts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.tts_request_body, null, 2) }}",
+        "options": {
+          "timeout": 3000000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1968,
+        -1056
+      ],
+      "id": "f0d28cc5-3683-4f6c-ad41-bb8c16a63527",
+      "name": "Generate TTS",
+      "notesInFlow": true,
+      "retryOnFail": true,
+      "notes": "/tts"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "=youtube-automation",
+        "fileName": "={{ $('Normalize').item.json.normalized.audioFileName }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        -1056
+      ],
+      "id": "bef467ca-8b37-4cf5-8b34-84e7d08aecf0",
+      "name": "Upload a file1",
+      "retryOnFail": true,
+      "credentials": {
+        "s3": {
+          "id": "oUmxAhXNpavieRUd",
+          "name": "S3 account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function getOnePreferedVoice() {\n  let video_voice_reference = $('Normalize').item.json.normalized.context.voice_reference\n  \n  if(video_voice_reference && video_voice_reference !== \"NA\"){\n    return video_voice_reference;\n  }\n  let default_voice = $('Normalize').item.json.normalized.context.default_voice\n  \n  if(default_voice){\n    return default_voice;\n  }\n  const preSelectedVoice = $('Code in JavaScript').item.json.preSelectedVoice;\n  if(preSelectedVoice){\n    return preSelectedVoice;\n  }\n}\nconsole.log(\"sdsdsdss\");\n// console.log($('Loop Over Items').item.json.prompt_parsed);\n// Extract the video URL with optional chaining\nconst text = $('Normalize').item.json.normalized.segment.narration_text\n  // input?.[0]?.response?.[0]?.file_url;\nif (!text) throw new Error(\"Missing video URL\");\n\nlet auto_selected_voice = getOnePreferedVoice();\n\n  \n// console.log('voice selected: '+ auto_selected_voice);\n// Build the caption request body\nconst addTTSBody = {\n  text: text,\n  voice_mode: \"predefined\",\n  predefined_voice_id: auto_selected_voice,\n  reference_audio_filename: \"\",\n  output_format: \"mp3\",\n  split_text: false,\n  // chunk_size: 120,\n  temperature: 0.7,\n  exaggeration: 0.7,\n  cfg_weight: 0.5,\n  seed: 0,\n  speed_factor: 1,\n  language: \"en\"\n};\n\n// Preview or send\n// console.log(JSON.stringify(addTTSBody, null, 2));\nreturn {\n  tts_request_body: addTTSBody\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        -1056
+      ],
+      "id": "28c3262b-3668-4e4b-a8f9-b3a81574ed46",
+      "name": "Generate TTS req body",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:8080/v1/code/execute/python",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "thekey"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"code\": \"import subprocess, json\\n\\n# -------- INPUT --------\\naudio_path = \\\"{{ $('Normalize').item.json.normalized.audioFilePath }}\\\"\\n\\nif not audio_path:\\n    raise Exception('audioFilePath is missing or empty')\\n\\n# -------- FUNCTION --------\\ndef get_audio_duration(path):\\n    cmd = [\\n        'ffprobe', '-v', 'error',\\n        '-show_entries', 'format=duration',\\n        '-of', 'default=nk=1:nw=1',\\n        path\\n    ]\\n    result = subprocess.run(cmd, capture_output=True, text=True, check=True)\\n    return float(result.stdout.strip())\\n\\n# -------- EXECUTION --------\\naudio_duration = get_audio_duration(audio_path)\\n\\nfade_start = max(audio_duration - 1.0, 0)\\nfade_start_str = f\\\"{fade_start:.2f}\\\"\\n\\n# -------- OUTPUT --------\\nprint(json.dumps({\\n    'audio_duration': audio_duration,\\n    'fade_start': fade_start_str\\n}))\",\n  \"timeout\": 300\n}\n",
+        "options": {
+          "timeout": 3000000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2416,
+        -1056
+      ],
+      "id": "28cfb5ce-4fd1-432d-b706-d4d90be7c36d",
+      "name": "Probe Audio",
+      "retryOnFail": true,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -480,
+        -608
+      ],
+      "id": "3fffa657-14a0-454d-ba3b-9df6a5bd3b70",
+      "name": "When Executed by Long video workflow",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "1ae252ac-23cc-4050-820a-7d27c208c336",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        -1120
+      ],
+      "id": "5a32de75-8072-4e4b-9afc-72e41b028d7b",
+      "name": "Webhook for UI Preview and Render",
+      "webhookId": "1ae252ac-23cc-4050-820a-7d27c208c336"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalize input (n8n Code node - JS)\n// Run mode: runOnceForEachItem\n\n// Accept both webhook wrapper and internal calls\nconst root = $json.body ? $json.body : $json;\n\n// pick raw fields (some workflows put data under body, some don't)\nconst incomingSegment = root.segment || $json.segment || null;\nconst incomingFilterConfig = root.filter_config || $json.filter_config || null;\nconst incomingNeedAudio = (root.need_audio !== undefined) ? !!root.need_audio : ( $json.need_audio !== undefined ? !!$json.need_audio : true );\nconst incomingAudioFilePath = root.audioFilePath || $json.audioFilePath || null;\n\n// If Probe Audio node is connected upstream, its output may be in the incoming item.\n// Support either root.probe or root.probe_response or $json.probe\nconst probeObj = root.probe || root.probe_response || $json.probe || null;\n\n// Helper to deep-clone\nfunction clone(v) { return JSON.parse(JSON.stringify(v || {})); }\n\n// Basic validation\nif (!incomingSegment) throw new Error(\"segment missing in Normalize input\");\nif (!incomingFilterConfig) throw new Error(\"filter_config missing in Normalize input\");\n\n// Start normalized object\nconst normalized = {\n  // raw normalized roots\n  segment: clone(incomingSegment),\n  filter_config: clone(incomingFilterConfig),\n  // audio control\n  need_audio: incomingNeedAudio,\n  audioFilePath: incomingAudioFilePath || null,\n  // will be filled with durations (seconds, float)\n  segment_duration: null,\n  audio_duration: null,\n  // convenience meta defaults\n  meta: {},\n};\n\n// --- 1) ensure filter_config is an object (sometimes stringified) ---\nif (typeof normalized.filter_config === 'string') {\n  try {\n    normalized.filter_config = JSON.parse(normalized.filter_config);\n  } catch (err) {\n    throw new Error(\"filter_config is a string but JSON.parse failed: \" + err.message);\n  }\n}\n\n// provide defaults in meta / timing for downstream\nnormalized.meta = normalized.filter_config.meta = normalized.filter_config.meta || {};\nnormalized.timing = normalized.filter_config.timing = normalized.filter_config.timing || {};\nnormalized.filter_config.visual_overlays = normalized.filter_config.visual_overlays || {};\nnormalized.filter_config.text_overlays = normalized.filter_config.text_overlays || {};\nnormalized.filter_config.audio_overlays = normalized.filter_config.audio_overlays || {};\nnormalized.filter_config.transitions_overlays = normalized.filter_config.transitions_overlays || {};\n\n// --- 2) If arrays are used for overlays, convert to keyed objects ---\n// Accept either array or object; convert arrays to { visual_0: {...}, ... }\nfunction ensureKeyed(obj, prefix) {\n  if (!obj) return {};\n  if (Array.isArray(obj)) {\n    const out = {};\n    for (let i = 0; i < obj.length; i++) {\n      out[`${prefix}_${i}`] = obj[i];\n    }\n    return out;\n  }\n  return obj;\n}\n\nnormalized.filter_config.visual_overlays = ensureKeyed(normalized.filter_config.visual_overlays, 'visual');\nnormalized.filter_config.text_overlays = ensureKeyed(normalized.filter_config.text_overlays, 'text');\n\n// --- 3) Compute/attach scale_factor if only scale string exists ---\n// e.g. \"1920:1080\" -> compute factor relative to meta.resolution width\nfunction computeScaleFactorFromScale(scaleStr, metaResolution) {\n  if (!scaleStr) return undefined;\n  try {\n    if (typeof scaleStr === 'string') {\n      if (scaleStr.includes('iw*')) {\n        const m = scaleStr.match(/iw\\*([0-9.]+)/);\n        if (m) return Number(m[1]);\n      } else if (scaleStr.includes(':')) {\n        const [wStr] = scaleStr.split(':');\n        const targetW = parseFloat(wStr);\n        const baseW = metaResolution ? parseFloat((metaResolution || '1920:1080').split(':')[0]) : 1920;\n        if (!isNaN(targetW) && !isNaN(baseW) && baseW > 0) {\n          return targetW / baseW;\n        }\n      }\n    }\n  } catch (e) {\n    return undefined;\n  }\n  return undefined;\n}\n\nconst metaRes = normalized.meta.resolution || '1920:1080';\n\n// normalize visuals\nfor (const [k, v] of Object.entries(normalized.filter_config.visual_overlays || {})) {\n  // ensure the overlay has a stable id (if you want we can use the key)\n  v.id = v.id || k;\n\n  // if they use \"scale_factor\", keep it; otherwise compute from \"scale\"\n  if (v.scale_factor == null && v.scale) {\n    const f = computeScaleFactorFromScale(v.scale, metaRes);\n    if (f) v.scale_factor = f;\n  }\n  // ensure layer is numeric\n  v.layer = typeof v.layer === 'number' ? v.layer : (isNaN(Number(v.layer)) ? 0 : Number(v.layer));\n  // defaults\n  v.x_offset_percent = v.x_offset_percent ?? 0;\n  v.y_offset_percent = v.y_offset_percent ?? 0;\n  v.opacity = v.opacity ?? 100;\n}\n\n// normalize texts\nfor (const [k, t] of Object.entries(normalized.filter_config.text_overlays || {})) {\n  t.id = t.id || k;\n  t.layer = typeof t.layer === 'number' ? t.layer : (isNaN(Number(t.layer)) ? 0 : Number(t.layer));\n  t.x_offset_percent = t.x_offset_percent ?? 0;\n  t.y_offset_percent = t.y_offset_percent ?? 0;\n  t.opacity = t.opacity ?? 100;\n  // compute scale_factor for texts if provided as scale string\n  if (t.scale_factor == null && t.scale) {\n    const f = computeScaleFactorFromScale(t.scale, metaRes);\n    if (f) t.scale_factor = f;\n  }\n}\n\n// --- 4) If Probe Audio was attached upstream, parse audio duration & set segment duration ---\n// Probe output may be present as { response: { stdout: '...json...' } } or as plain object\nlet audioDuration = null;\ntry {\n  const probeCandidate = probeObj || root.probe || $json.probe;\n  if (probeCandidate) {\n    // If it's a full node response with response.stdout\n    const stdout = probeCandidate.response?.stdout || probeCandidate.stdout || null;\n    if (stdout) {\n      // many of your probe code print JSON: { \"audio_duration\": 14.904, \"fade_start\": \"13.90\" }\n      try {\n        const parsed = JSON.parse(stdout);\n        if (parsed?.audio_duration) audioDuration = Number(parsed.audio_duration);\n      } catch (e) {\n        // maybe stdout is plain number string\n        const n = Number(stdout);\n        if (!isNaN(n)) audioDuration = n;\n      }\n    } else if (probeCandidate.audio_duration) {\n      audioDuration = Number(probeCandidate.audio_duration);\n    }\n  }\n} catch (e) {\n  // ignore\n}\n\n// If audio duration found - set both audio_duration and segment_duration\nif (audioDuration != null && !isNaN(audioDuration)) {\n  normalized.audio_duration = audioDuration;\n  normalized.segment_duration = audioDuration;\n}\n\n// If there's no audio but filter_config.meta has an explicit duration, use it\nif (!normalized.segment_duration && normalized.meta && normalized.meta.segment_duration) {\n  normalized.segment_duration = Number(normalized.meta.segment_duration);\n}\n\n// Last fallback: if no duration known -> leave null; CreateCompose will use default\n// But set a sensible default in meta so image -t will not be zero\nnormalized.segment_duration = normalized.segment_duration || (normalized.meta.default_segment_duration || (normalized.meta?.default_preview_duration || 10));\n\n// --- 5) If need_audio is true but audioFilePath not yet present, try to find it from root or upstream nodes ---\n// Accept common variable names: audioFilePath, audio_file, audio_url\nif (normalized.need_audio && !normalized.audioFilePath) {\n  normalized.audioFilePath = root.audioFilePath || root.audio_file || root.audio_url || $json.audioFilePath || null;\n}\n\n// --- 6) Make sure meta contains fps/resolution/default_scale from defaults ---\nnormalized.meta.fps = normalized.meta.fps ?? 30;\nnormalized.meta.resolution = normalized.meta.resolution ?? '1920:1080';\nnormalized.meta.default_scale = normalized.meta.default_scale ?? '600:-1';\n\n// --- 7) Return normalized structure for the CreateCompose node to consume ---\nreturn {\n  normalized\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -1344
+      ],
+      "id": "24683db5-0059-43d1-b4e0-a4917a04b285",
+      "name": "Normalize input",
+      "executeOnce": false,
+      "disabled": true,
+      "notes": "TO normalize inputs from UI and long video workflow call."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// n8n Code node: Create compose_request_body (improved)\n// Expects input: normalized (from Normalize input node)\n// Returns: { compose_request_body: { inputs, outputs, metadata, global_options, id } }\n\nconst root = $json.normalized || $json; // support two shapes\nconst seg = root.segment;\nconst filterConfig = root.filter_config || {};\nconst meta = filterConfig.meta || {};\nconst timing = filterConfig.timing || {};\nconst res = meta.resolution || \"1920:1080\";\nconst fps = meta.fps || 30;\nconst defScale = meta.default_scale || \"600:-1\";\nconst delaySeconds = Number(meta.delay_seconds || 0);\nconst chDur = Number(timing.chapter_transition_duration || 3);\nconst debug = !!meta.enable_debug_overlay;\nconst durationFallback = root.segment_duration || 10;\n\n// ---------- helpers ----------\nconst clamp01 = (v) => Math.min(1, Math.max(0, isNaN(v) ? 1 : +v));\nconst lanczos = (s) => (s && s.includes(\"flags=\") ? s : `${s || defScale}:flags=lanczos`);\n\n// old center() -> FFmpeg expression generator (text-aware)\nconst center = (x = 0, y = 0, txt = false) => {\n  const xp = (x / 100).toFixed(6);\n  const yp = (-y / 100).toFixed(6); // ffmpeg positive up => subtract\n  return {\n    x: txt ? `(W-text_w)/2+(W*${xp})` : `(W-w)/2+(W*${xp})`,\n    y: txt ? `(H-text_h)/2+(H*${yp})` : `(H-h)/2+(H*${yp})`\n  };\n};\n\n// segment match() exactly as old code\nconst match = (o, s) =>\n  (!o.segment_targets && !o.scene_types && !o.chapter_numbers) ||\n  (Array.isArray(o.segment_targets) && o.segment_targets.includes(s.segment_number)) ||\n  (Array.isArray(o.scene_types) && o.scene_types.includes(s.scene_type)) ||\n  (Array.isArray(o.chapter_numbers) && o.chapter_numbers.includes(s.chapter_number));\n\n// safe getter for overlay groups (object or array -> object keyed)\nfunction ensureKeyed(obj) {\n  if (!obj) return {};\n  if (Array.isArray(obj)) {\n    const out = {};\n    for (let i = 0; i < obj.length; i++) out[`item_${i}`] = obj[i];\n    return out;\n  }\n  return obj;\n}\n\n// flatten overlays into entries sorted by layer\nconst visualCfg = ensureKeyed(filterConfig.visual_overlays);\nconst textCfg   = ensureKeyed(filterConfig.text_overlays);\nconst audioCfg  = filterConfig.audio_overlays || {};\nconst transitionCfg = filterConfig.transitions_overlays || filterConfig.transitions || {};\n\n// merge visuals + texts for overlay processing (texts are handled as drawtext later)\nconst overlaysObj = { ...visualCfg, ...textCfg };\nconst ovEntries = Object.entries(overlaysObj).sort((a, b) => ( (a[1].layer||0) - (b[1].layer||0) ));\n\n// ---------- build inputs ----------\nconst inputs = [];\nconst ovs = []; // { key, i, o, t } for visual/video/image overlays\nfor (const [k, oRaw] of ovEntries) {\n  const o = { ...oRaw };\n  if (!match(o, seg)) continue; // segment-aware matching\n\n  // skip pure text overlays for input stream building\n  if (o.type === \"text\") continue;\n\n  if (!o.url) continue;\n  const t = o.type || (o.url.toLowerCase().endsWith(\".mp4\") ? \"video\" : \"image\");\n  const opt = [];\n  // compute duration to use for -t for images\n  const dur = String(durationFallback);\n\n  if (t === \"image\") {\n    // images loop: use -loop 1 + -t <duration>\n    opt.push({ option: \"-loop\", argument: \"1\" }, { option: \"-t\", argument: dur });\n  }\n  if (t === \"video\" && o.loop) {\n    opt.push({ option: \"-stream_loop\", argument: \"-1\" });\n  }\n  inputs.push({ file_url: o.url, options: opt });\n  ovs.push({ key: k, i: inputs.length - 1, o, t });\n}\n\n//\n// narration audio (if present)\nlet audioIndex = null;\nif (root.need_audio !== false && root.audioFilePath) {\n  inputs.push({ file_url: root.audioFilePath, options: [] });\n  audioIndex = inputs.length - 1;\n}\n\n// background music optional (choose first bg music matching scope)\nlet bgIdx = null;\nconst bgCfg = (Array.isArray(audioCfg) ? audioCfg.find(a=>a.id==='background_music') : (audioCfg && audioCfg.background_music)) || null;\nif (bgCfg && (!bgCfg.scope || bgCfg.scope === seg.scene_type || bgCfg.scope === \"all\" || bgCfg.scope === \"chapter\")) {\n  inputs.push({ file_url: bgCfg.url, options: [] });\n  bgIdx = inputs.length - 1;\n}\n\n// any other audio overlays (e.g. sfx) may be treated as extra inputs (optional)\nconst otherAudioInputs = [];\nif (Array.isArray(filterConfig.audio_overlays)) {\n  filterConfig.audio_overlays.forEach(a=>{\n    if (a.id !== (bgCfg && bgCfg.id)) {\n      inputs.push({ file_url: a.url, options: [] });\n      otherAudioInputs.push(inputs.length - 1);\n    }\n  });\n} else if (typeof filterConfig.audio_overlays === 'object') {\n  for (const [ak, a] of Object.entries(filterConfig.audio_overlays)) {\n    if (a && a.url && a.id !== (bgCfg && bgCfg.id) && ak !== 'background_music') {\n      inputs.push({ file_url: a.url, options: [] });\n      otherAudioInputs.push(inputs.length - 1);\n    }\n  }\n}\n\n// ---------- filter_complex builder ----------\nconst parts = [];\nlet cur = null;\nlet tmp = 0;\n\n// precompute center expression for each overlay and push scale+effects\nfor (const { i, o, t } of ovs) {\n  const xOff = o.x_offset_percent ?? 0;\n  const yOff = o.y_offset_percent ?? 0;\n  const pos = center(xOff, yOff, false); // for visuals use w/h; text uses text_w/text_h later\n\n  // scale: either explicit scale string, or use scale_factor -> convert to \"iw*factor:ih*factor\"\n  let scaleStr = o.scale || defScale;\n  if (!o.scale && o.scale_factor) {\n    scaleStr = `iw*${o.scale_factor}:ih*${o.scale_factor}`;\n  }\n\n  let f = `[${i}:v]scale=${lanczos(scaleStr)},setsar=1,setpts=PTS-STARTPTS`;\n  if (o.colorkey) f += `,colorkey=${o.colorkey}`;\n  if (o.opacity != null && o.opacity < 100) {\n    const aa = clamp01(o.opacity / 100);\n    f += `,format=rgba,colorchannelmixer=aa=${aa}`;\n  }\n  f += `[ov${i}]`;\n  parts.push(f);\n\n  if (!cur) cur = `ov${i}`;\n  else {\n    tmp++;\n    const next = `tmp${tmp}`;\n    // overlay with position expression\n    parts.push(`[${cur}][ov${i}]overlay=${pos.x}:${pos.y}:format=auto[${next}]`);\n    cur = next;\n  }\n}\n\n// if no overlays produced a video stream, use a fallback black screen (rare)\nif (!cur) {\n  // create a solid color background fallback using color source (ffmpeg supports color source with lavfi)\n  // But since compose endpoint expects inputs[] entries, better to throw to highlight config issues:\n  throw new Error(\"No overlays matched segment (no visual inputs).\");\n}\n\n// ---------- CHAPTER / TEXT drawtext rendering (text_w/text_h-aware) ----------\n// handle text overlays (drawtext) - iterate textCfg entries and apply only those matching segment\nfor (const [tk, tcfg] of Object.entries(textCfg)) {\n  const t = { ...(tcfg || {}) };\n  if (!match(t, seg)) continue;\n  // ensure id\n  t.id = t.id || tk;\n  const pos = center(t.x_offset_percent ?? 0, t.y_offset_percent ?? 0, true);\n  const font = t.font || \"/app/fonts/ComicNeue-BoldItalic.ttf\";\n  const color = t.fontcolor || \"white\";\n  const size = t.fontsize || 48;\n  const box = t.box ? \"box=1:\" : \"\";\n  const bc = t.boxcolor ? `boxcolor=${t.boxcolor}:` : \"\";\n  const bb = t.boxborderw ? `boxborderw=${t.boxborderw}:` : \"\";\n  const prefix = `${box}${bc}${bb}`.replace(/:+$/, \"\");\n  const textSource = (() => {\n    if (!t.text && t.text_source === \"seg.chapter_name\") return seg.chapter_name || \"\";\n    if (t.text) return t.text;\n    return seg.chapter_name || \"\";\n  })();\n  const safeText = String(textSource).replace(/'/g, \"\\\\'\");\n  tmp++;\n  const next = `tmp${tmp}`;\n  parts.push(\n    `[${cur}]drawtext=fontfile='${font}':text='${safeText}':fontcolor=${color}:fontsize=${size}:x=${pos.x}:y=${pos.y}:${prefix}[${next}]`\n  );\n  cur = next;\n}\n\n// ---------- CHAPTER ANIMATION (restore full intro|full|intro_and_full) ----------\nconst chapterAnim = transitionCfg?.chapter_animation || filterConfig.chapter_animation || {};\nif (seg.scene_type === \"chapter\" && chapterAnim?.enable) {\n  const mode = chapterAnim.mode || \"intro\";\n  const introDur = (typeof chapterAnim.duration === \"number\") ? chapterAnim.duration : chDur;\n  const persistentOpacity = (typeof chapterAnim.persistent_opacity === \"number\")\n    ? clamp01(chapterAnim.persistent_opacity / 100) : 1;\n  const pos = center((chapterAnim.offset?.x) ?? 0, (chapterAnim.offset?.y) ?? 0, true);\n  const font = chapterAnim.font || \"/app/fonts/ComicNeue-BoldItalic.ttf\";\n  const color = chapterAnim.fontcolor || \"white\";\n  const size = chapterAnim.fontsize || 72;\n  const box = chapterAnim.box ? \"box=1:\" : \"\";\n  const bc = chapterAnim.boxcolor ? `boxcolor=${chapterAnim.boxcolor}:` : \"\";\n  const bb = chapterAnim.boxborderw ? `boxborderw=${chapterAnim.boxborderw}:` : \"\";\n  const prefix = `${box}${bc}${bb}`.replace(/:+$/, \"\");\n  const rawText = (() => {\n    if (!chapterAnim.text_source || chapterAnim.text_source === \"seg.chapter_name\") return seg.chapter_name || \"\";\n    if (chapterAnim.text_source.startsWith(\"literal:\")) return chapterAnim.text_source.replace(/^literal:/, \"\");\n    if (chapterAnim.text_source.startsWith(\"meta.\")) {\n      const k = chapterAnim.text_source.replace(/^meta\\./, \"\");\n      return meta[k] || \"\";\n    }\n    return seg.chapter_name || \"\";\n  })();\n  const ttext = String(rawText).replace(/'/g, \"\\\\'\");\n\n  if (mode === \"intro\") {\n    tmp++;\n    const next = `tmp${tmp}`;\n    const enableExpr = `between(t,0,${introDur})`;\n    parts.push(\n      `[${cur}]drawtext=fontfile='${font}':text='${ttext}':fontcolor=${color}:fontsize=${size}:x=${pos.x}:y=${pos.y}:${prefix}:enable='${enableExpr}'[${next}]`\n    );\n    cur = next;\n  } else if (mode === \"full\") {\n    tmp++;\n    const next = `tmp${tmp}`;\n    let pc = color;\n    if (persistentOpacity < 1 && !String(color).includes(\"@\")) pc = `${color}@${persistentOpacity}`;\n    parts.push(\n      `[${cur}]drawtext=fontfile='${font}':text='${ttext}':fontcolor=${pc}:fontsize=${size}:x=${pos.x}:y=${pos.y}:${prefix}[${next}]`\n    );\n    cur = next;\n  } else if (mode === \"intro_and_full\") {\n    tmp++;\n    const nextIntro = `tmp${tmp}`;\n    const enableExpr = `between(t,0,${introDur})`;\n    parts.push(\n      `[${cur}]drawtext=fontfile='${font}':text='${ttext}':fontcolor=${color}:fontsize=${size}:x=${pos.x}:y=${pos.y}:${prefix}:enable='${enableExpr}'[${nextIntro}]`\n    );\n    cur = nextIntro;\n    tmp++;\n    const nextPersist = `tmp${tmp}`;\n    let pc2 = color;\n    if (persistentOpacity < 1 && !String(color).includes(\"@\")) pc2 = `${color}@${persistentOpacity}`;\n    const persistSize = Math.max(12, Math.round(size * 0.6));\n    parts.push(\n      `[${cur}]drawtext=fontfile='${font}':text='${ttext}':fontcolor=${pc2}:fontsize=${persistSize}:x=${pos.x}:y=${pos.y}:${prefix}[${nextPersist}]`\n    );\n    cur = nextPersist;\n  }\n}\n\n// ---------- DEBUG overlay ----------\nif (debug) {\n  tmp++;\n  const next = `tmp${tmp}`;\n  parts.push(\n    `[${cur}]drawtext=text='Seg:${seg.segment_number} Ch:${seg.chapter_number} ${seg.scene_type}':x=20:y=H-th-40:fontcolor=white:fontsize=28:box=1:boxcolor=black@0.4[${next}]`\n  );\n  cur = next;\n}\n\n// ---------- AUDIO handling (narration + background music + fades + adelay) ----------\nconst aIdx = audioIndex;\nif (bgIdx !== null) {\n  const vol = (bgCfg && (bgCfg.volume ?? 0.2)) || 0.2;\n  const fadeIn = (bgCfg && (bgCfg.fade_in ?? 0)) || 0;\n  const fadeOut = (bgCfg && (bgCfg.fade_out ?? 0)) || 0;\n  // background: loop indefinitely + apply volume + fade\n  let bgChain = `[${bgIdx}:a]aloop=loop=-1:size=2e+09,volume=${vol}`;\n  if (fadeIn > 0) bgChain += `,afade=t=in:st=0:d=${fadeIn}`;\n  if (fadeOut > 0) bgChain += `,afade=t=out:st=${Math.max(0, durationFallback - fadeOut)}:d=${fadeOut}`;\n  bgChain += `[bgaud]`;\n  parts.push(bgChain);\n\n  // narration (adelay for first segment)\n  if (aIdx != null) {\n    if (seg.segment_number === 1 && delaySeconds > 0) {\n      const ms = Math.round(delaySeconds * 1000);\n      parts.push(`[${aIdx}:a]adelay=${ms}|${ms}[narr_aud]`);\n    } else {\n      parts.push(`[${aIdx}:a]anull[narr_aud]`);\n    }\n  } else {\n    // no narration; create silent narration so amix works (not ideal but keeps graph)\n    parts.push(`anullsrc=channel_layout=stereo:sample_rate=48000[silent_narr]`);\n    parts.push(`[silent_narr]aresample=48000[narr_aud]`);\n  }\n\n  // if other audio inputs exist, map them into bg mix chain (optional)\n  // Mix narration + bg (and any other audios if present) -> aout\n  const amixInputs = [ '[narr_aud]', '[bgaud]' ];\n  parts.push(`${amixInputs.join('')}amix=inputs=2:duration=shortest:dropout_transition=3[aout]`);\n} else {\n  // narration only path\n  if (aIdx != null) {\n    if (seg.segment_number === 1 && delaySeconds > 0) {\n      const ms = Math.round(delaySeconds * 1000);\n      parts.push(`[${aIdx}:a]adelay=${ms}|${ms}[aout]`);\n    } else {\n      parts.push(`[${aIdx}:a]anull[aout]`);\n    }\n  } else {\n    // no audio at all, produce silent audio\n    parts.push(`anullsrc=channel_layout=stereo:sample_rate=48000[aout]`);\n  }\n}\n\n// ---------- FINAL OUTPUT scaling/pad and audio resample ----------\nparts.push(`[${cur}]scale=${res}:force_original_aspect_ratio=decrease,pad=${res}:(ow-iw)/2:(oh-ih)/2,fps=${fps},setsar=1,format=yuv420p[vout]`);\nparts.push(`[aout]aresample=48000,pan=stereo|c0=c0|c1=c0[aout_mapped]`);\n\n// assemble filter_complex\nconst filterComplex = parts.join(\"; \");\n\n// outputs options (map vout + aout_mapped)\nconst outputs = [\n  {\n    options: [\n      { option: \"-filter_complex\", argument: filterComplex },\n      { option: \"-map\", argument: \"[vout]\" },\n      { option: \"-map\", argument: \"[aout_mapped]\" },\n      { option: \"-c:v\", argument: \"libx264\" },\n      { option: \"-preset\", argument: meta.preset || \"veryfast\" },\n      { option: \"-crf\", argument: String(meta.crf || 20) },\n      { option: \"-c:a\", argument: \"aac\" },\n      { option: \"-b:a\", argument: meta.audioBitrate || \"192k\" },\n      { option: \"-ar\", argument: \"48000\" },\n      { option: \"-ac\", argument: \"2\" },\n      { option: \"-shortest\" },\n      { option: \"-movflags\", argument: \"+faststart\" }\n    ]\n  }\n];\n\n// dynamic id naming\nconst id = `ch${seg.chapter_number ?? 0}_seg${seg.segment_number ?? 0}_${seg.scene_type ?? \"seg\"}.mp4`;\n\n// final compose_request_body\nreturn {\n  compose_request_body: {\n    inputs,\n    outputs,\n    global_options: [{ option: \"-y\" }, { option: \"-async\", argument: \"1\" }],\n    metadata: { duration: true, filesize: true },\n    id\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3328,
+        -832
+      ],
+      "id": "95806411-917b-43bf-8ffe-c29d36cf137b",
+      "name": "Create compose_request_body",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:8080/v1/ffmpeg/compose",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "thekey"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.compose_request_body, null, 2) }}",
+        "options": {
+          "timeout": 9000000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3552,
+        -832
+      ],
+      "id": "220d5a6e-c365-40e4-b7cc-c55eeecc10fb",
+      "name": "MergeImageAndAudio",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "=youtube-automation",
+        "fileName": "={{ $('Normalize').item.json.normalized.fileName }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [
+        864,
+        -1008
+      ],
+      "id": "e5fa77d6-6000-4d5c-94f0-50527b60e639",
+      "name": "Upload a file",
+      "credentials": {
+        "s3": {
+          "id": "oUmxAhXNpavieRUd",
+          "name": "S3 account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.pexels.com/videos/search?query={{ $json.normalized.segment.imagedescription }}",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={\n    \"query\": \"{{  $json.normalized.segment.imagedescription }}\",\n    \"per_page\": 1,\n    \"orientation\": \"{{ ($json.normalized.filter_config.meta.resolution == '1920:1080') ? 'landscape' : 'portrait'}}\",\n    \"size\": \"medium\",\n    \"min_duration\": 5,\n    \"max_duration\": 20\n}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "d3O5RKoi56lDxKv3QPDQHE0hqX5XRnwLOVVa6iY4EFQjam5VE8WAPyF1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        -1008
+      ],
+      "id": "0c4d13c3-139a-4aa9-ad22-5b70f9a1b870",
+      "name": "Fetch Pexels Video",
+      "alwaysOutputData": false,
+      "executeOnce": false,
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Function Node\nreturn items.flatMap(item => {\n  const data = item.json;\n  \n  if (!data.videos || data.videos.length === 0) {\n    return [{ json: { error: \"No videos found in response.\" } }];\n  }\n\n  // Process all videos in this item\n  return data.videos.map(video => {\n    const videoFiles = video.video_files || [];\n\n    // Filter only MP4 files\n    const mp4Files = videoFiles.filter(f => f.file_type === \"video/mp4\");\n\n    if (mp4Files.length === 0) {\n      return { json: { error: \"No MP4 files found for video.\", video_id: video.id } };\n    }\n\n    // Sort descending by resolution (height)\n    const sorted = mp4Files.sort((a, b) => b.height - a.height);\n\n    // Pick the highest-quality MP4\n    // const bestFile = sorted[0];\n    // Pick the first MP4\n    const bestFile = mp4Files[0];\n\n    // Return clean, structured JSON\n    return {\n      json: {\n        video_id: video.id,\n        title: video.url.split(\"/\").slice(-2, -1)[0], // e.g. movie-18373898\n        user_name: video.user?.name || \"Unknown\",\n        duration: video.duration,\n        width: bestFile.width,\n        height: bestFile.height,\n        quality: bestFile.quality,\n        fps: bestFile.fps,\n        video_url: bestFile.link,\n        page_url: video.url,\n        thumbnail: video.image,\n        preview_frame: video.video_pictures?.[0]?.picture || null\n      }\n    };\n  });\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        -1008
+      ],
+      "id": "cd9f8578-0e76-4189-9af0-9c240343c8e5",
+      "name": "Choose Pexels Video"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.video_url }}",
+        "options": {
+          "timeout": 3000000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        -1008
+      ],
+      "id": "140761fd-7ddf-4c2d-9fa5-16e6a50ee618",
+      "name": "Download Video",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2db9fec8-a9c7-486e-8d8c-aeb1302d5a1a",
+              "leftValue": "={{ $('Normalize').item.json.normalized.need_audio }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        -816
+      ],
+      "id": "2de692b1-0ca2-4ad5-a0ea-6e1deb6bbe00",
+      "name": "If Audio needed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2db9fec8-a9c7-486e-8d8c-aeb1302d5a1a",
+              "leftValue": "={{ $json.normalized.auto_background }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -32,
+        -832
+      ],
+      "id": "1e343ee7-d55c-4c94-a6fc-3691c18d812c",
+      "name": "If Auto Background is needed"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ----------------------------------------------------------------------\n// 1. IMPROVED \"Normalize Input\" Node Code\n// ----------------------------------------------------------------------\n// Use this code in your \"Normalize input\" node. \n// It now merges inputs from Webhook (UI) and Workflow Trigger seamlessly.\n// It also auto-detects Pexels background logic if you added that flow.\n\nconst normalized = $('Normalize').item.json.normalized ? $('Normalize').item.json.normalized : $json;\nconsole.log(normalized);\n\nconst incomingBgPath = $('Normalize').item.json.normalized.auto_background ? $('Normalize').item.json.normalized.filePath : null; // From Pexels flow\nconsole.log(\"incomingBgPath: \"+incomingBgPath);\n\nconst incomingAudioPath = $('Normalize').item.json.normalized.need_audio ? $('Normalize').item.json.normalized.audioFilePath : null;\nconsole.log(\"incomingAudioPath: \"+incomingAudioPath);\n\n// Check Probe\nconst probeObj = root.probe || $('Probe Audio').item.json.response || $json.probe || null;\nlet audioDuration;\ntry {\n    const probeCandidate = probeObj || root.probe || $json.probe;\n    if (probeCandidate) {\n        const stdout = probeCandidate.response?.stdout || probeCandidate.stdout || null;\n        if (stdout) {\n            const parsed = JSON.parse(stdout);\n            if (parsed?.audio_duration) audioDuration = Number(parsed.audio_duration);\n        } else if (probeCandidate.audio_duration) {\n            audioDuration = Number(probeCandidate.audio_duration);\n        }\n    }\n} catch (e) { }\n\nif (audioDuration != null && !isNaN(audioDuration)) {\n    normalized.audio_duration = audioDuration;\n    normalized.segment_duration = audioDuration;\n}\n\n// Fallback Duration\nif (!normalized.segment_duration) {\n    normalized.segment_duration = Number(normalized.meta.segment_duration || 10);\n}\n\n// INJECT AUTO BACKGROUND (If Pexels flow ran)\nif (incomingBgPath) {\n    const bgId = \"auto_pex_bg\";\n    normalized.filter_config.visual_overlays[bgId] = {\n        id: bgId,\n        type: \"video\",\n        url: incomingBgPath.startsWith('http') ? incomingBgPath : `${context.s3_url}/${context.bucket_name}/${incomingBgPath}`,\n        layer: -1, // Force bottom\n        scale: normalized.meta.resolution === \"1080:1920\" ? \"1080:1920\" : \"1920:1080\",\n        opacity: 100,\n        loop: true,\n        scale_factor: null\n    };\n    normalized['audioFilePath'] = incomingAudioPath;\n}\n\nif (incomingAudioPath) {\n    normalized.audioFilePath = incomingAudioPath;\n}\n\nreturn { normalized };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        -832
+      ],
+      "id": "1aba1acd-cefd-4cdb-ac90-ef4a2a5dd293",
+      "name": "Normalize input1",
+      "executeOnce": false,
+      "notes": "TO normalize inputs from UI and long video workflow call."
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        -816
+      ],
+      "id": "8acf937f-bd4d-40aa-8df6-e00256705f22",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ----------------------------------------------------------------------\n// 1. IMPROVED \"Normalize Input\" Node Code\n// ----------------------------------------------------------------------\n// Use this code in your \"Normalize input\" node. \n// It now merges inputs from Webhook (UI) and Workflow Trigger seamlessly.\n// It also auto-detects Pexels background logic if you added that flow.\n const now = new Date();\n\nconst root = $json.body ? $json.body : $json;\nconsole.log(root);\nconst incomingSegment = root.segment || $json.segment || null;\nconst incomingFilterConfig = root.filter_config || $json.filter_config || null;\nconst incomingNeedAudio = (root.need_audio !== undefined) ? !!root.need_audio : ($json.need_audio !== undefined ? !!$json.need_audio : true);\nconst incomingAudioFilePath = root.audioFilePath || $json.audioFilePath || null;\nconst incomingBgPath = root.filePath || $json.filePath || null; // From Pexels flow\n\n// Merge Context (Channel/Global Config)\nconst context = {\n    channel_name: root.channel_name || $json.channel_name || \"default\",\n    bucket_name: root.bucket_name || $json.bucket_name || \"youtube-automation\",\n    workspace_folder: root.workspace_folder || $json.workspace_folder || \"Previews\",\n    s3_url: root.s3_url || $json.s3_url || \"http://host.docker.internal:9000\",\n    default_voice: root.default_voice || $json.default_voice || null,\n    voice_reference: root.voice_reference || $json.voice_reference || null\n};\n\n// Check Probe\nconst probeObj = root.probe || root.probe_response || $json.probe || null;\n\nfunction clone(v) { return JSON.parse(JSON.stringify(v || {})); }\n\nif (!incomingSegment) throw new Error(\"Missing 'segment' in input\");\nif (!incomingFilterConfig) throw new Error(\"Missing 'filter_config' in input\");\n    \n    const timestamp = now.toISOString()\n    .replace('T', '_')\n    .replace(/:/g, '-')\n    .split('.')[0];\n    const bgName = `background-${timestamp}.mp4`;\n    const bgURL = `http://host.docker.internal:9000/youtube-automation/${bgName}`;\n\n    const audioFileName = `audioPart-${timestamp}.mp3`\n    const audioFileURL = `http://host.docker.internal:9000/youtube-automation/${audioFileName}`;\n\n// Normalize Structure\nconst normalized = {\n    segment: clone(incomingSegment),\n    filter_config: clone(incomingFilterConfig),\n    need_audio: incomingNeedAudio && !incomingSegment.audio_file_already_created, // Safety check\n    audioFilePath: audioFileURL || null,\n    audioFileName : audioFileName,\n    segment_duration: null,\n    audio_duration: null,\n    context: context, // Save context for later nodes\n    meta: {},\n    auto_background: $json.body.auto_background,\n    filePath: bgURL,\n    fileName: bgName\n};\n\n// Handle stringified config\nif (typeof normalized.filter_config === 'string') {\n    try { normalized.filter_config = JSON.parse(normalized.filter_config); } catch (e) { }\n}\n\n// Defaults\nnormalized.meta = normalized.filter_config.meta = normalized.filter_config.meta || {};\nnormalized.filter_config.visual_overlays = normalized.filter_config.visual_overlays || {};\nnormalized.filter_config.text_overlays = normalized.filter_config.text_overlays || {};\n\n// Helpers\nfunction ensureKeyed(obj, prefix) {\n    if (!obj) return {};\n    if (Array.isArray(obj)) {\n        const out = {};\n        for (let i = 0; i < obj.length; i++) out[`${prefix}_${i}`] = obj[i];\n        return out;\n    }\n    return obj;\n}\n\n// Key Arrays\nnormalized.filter_config.visual_overlays = ensureKeyed(normalized.filter_config.visual_overlays, 'visual');\nnormalized.filter_config.text_overlays = ensureKeyed(normalized.filter_config.text_overlays, 'text');\n\n// INJECT AUTO BACKGROUND (If Pexels flow ran)\nif (incomingBgPath) {\n    const bgId = \"auto_pex_bg\";\n    normalized.filter_config.visual_overlays[bgId] = {\n        id: bgId,\n        type: \"video\",\n        url: incomingBgPath.startsWith('http') ? incomingBgPath : `${context.s3_url}/${context.bucket_name}/${incomingBgPath}`,\n        layer: -1, // Force bottom\n        scale: normalized.meta.resolution === \"1080:1920\" ? \"1080:1920\" : \"1920:1080\",\n        opacity: 100,\n        loop: true,\n        scale_factor: null\n    };\n}\n\n// Parse Audio Duration from Probe\nlet audioDuration = null;\ntry {\n    const probeCandidate = probeObj || root.probe || $json.probe;\n    if (probeCandidate) {\n        const stdout = probeCandidate.response?.stdout || probeCandidate.stdout || null;\n        if (stdout) {\n            const parsed = JSON.parse(stdout);\n            if (parsed?.audio_duration) audioDuration = Number(parsed.audio_duration);\n        } else if (probeCandidate.audio_duration) {\n            audioDuration = Number(probeCandidate.audio_duration);\n        }\n    }\n} catch (e) { }\n\nif (audioDuration != null && !isNaN(audioDuration)) {\n    normalized.audio_duration = audioDuration;\n    normalized.segment_duration = audioDuration;\n}\n\n// Fallback Duration\nif (!normalized.segment_duration) {\n    normalized.segment_duration = Number(normalized.meta.segment_duration || 10);\n}\n\n// Final Meta\nnormalized.meta.fps = normalized.meta.fps ?? 30;\nnormalized.meta.resolution = normalized.meta.resolution ?? '1920:1080';\nnormalized.meta.default_scale = normalized.meta.default_scale ?? '600:-1';\n\nreturn { normalized };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        -832
+      ],
+      "id": "1c5b2dde-68c3-4c28-8b51-c1e4a4cb69bd",
+      "name": "Normalize",
+      "executeOnce": false,
+      "notes": "TO normalize inputs from UI and long video workflow call."
+    }
+  ],
+  "pinData": {
+    "When clicking ‘Execute workflow’": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n.manojnanjundaswamy.com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+            "content-length": "2346",
+            "accept": "application/json, text/plain, */*",
+            "accept-encoding": "gzip, br",
+            "accept-language": "en-US,en;q=0.9,hi;q=0.8",
+            "cdn-loop": "cloudflare; loops=1",
+            "cf-connecting-ip": "106.51.167.118",
+            "cf-ipcountry": "IN",
+            "cf-ray": "9b477cebbf4c3c01-BLR",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-warp-tag-id": "c976361e-ef60-40dc-bf9c-bfe24666f38a",
+            "connection": "keep-alive",
+            "content-type": "application/json",
+            "origin": "http://localhost:5173",
+            "priority": "u=1, i",
+            "referer": "http://localhost:5173/",
+            "sec-ch-ua": "\"Google Chrome\";v=\"143\", \"Chromium\";v=\"143\", \"Not A(Brand\";v=\"24\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "cross-site",
+            "x-forwarded-for": "106.51.167.118",
+            "x-forwarded-proto": "https"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "segment": {
+              "segment_number": 1,
+              "chapter_number": 0,
+              "chapter_name": "Intro — The Power of Small Beginnings",
+              "scene_type": "intro",
+              "imagedescription": "soft sunrise light warm desk gentle tone wide perspective",
+              "narration_text": "Hello and welcome. Today, we are exploring Atomic Habits by James Clear — a book that quietly reshaped millions of lives. This isn’t about overnight change or endless motivation. It’s about the quiet rhythm of daily actions, the invisible choices that quietly rewrite our destiny."
+            },
+            "filter_config": {
+              "meta": {
+                "resolution": "1920:1080",
+                "fps": 30,
+                "default_scale": "600:-1"
+              },
+              "timing": {},
+              "visual_overlays": [
+                {
+                  "id": "spectrum",
+                  "type": "video",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/spectrum_mic.mp4",
+                  "scale": "500:-1",
+                  "colorkey": "black:0.08:0.1",
+                  "opacity": 90,
+                  "x_offset_percent": 25,
+                  "y_offset_percent": -25,
+                  "layer": 1,
+                  "segment_targets": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "id": "logo",
+                  "type": "image",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/logo_bird.jpg",
+                  "scale": "150:-1",
+                  "colorkey": "white:0.08:0.1",
+                  "opacity": 40,
+                  "x_offset_percent": 45,
+                  "y_offset_percent": 40,
+                  "scene_types": [
+                    "chapter",
+                    "intro"
+                  ],
+                  "layer": 2
+                }
+              ],
+              "text_overlays": [
+                {
+                  "id": "chapter_label",
+                  "type": "text",
+                  "text": "Atomic Habits — Chapter 2",
+                  "font": "/app/fonts/ComicNeue-BoldItalic.ttf",
+                  "fontcolor": "yellow",
+                  "fontsize": 60,
+                  "opacity": 100,
+                  "x_offset_percent": 0,
+                  "y_offset_percent": 30,
+                  "scene_types": [
+                    "chapter"
+                  ],
+                  "layer": 3,
+                  "scale": "600:-1"
+                }
+              ],
+              "audio_overlays": [
+                {
+                  "id": "background_music",
+                  "type": "music",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/pianoMusic.mp3",
+                  "volume": 0.2,
+                  "scope": "chapter",
+                  "loop": true,
+                  "fade_in": 1.5,
+                  "fade_out": 1.5,
+                  "opacity": 100,
+                  "x_offset_percent": 0,
+                  "y_offset_percent": 0,
+                  "layer": 0,
+                  "scale": "600:-1"
+                },
+                {
+                  "id": "transition_sfx",
+                  "type": "music",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/Whoosh.mp3",
+                  "start_time": 0,
+                  "volume": 0.5,
+                  "scope": "segment",
+                  "scene_types": [
+                    "transition"
+                  ],
+                  "opacity": 100,
+                  "x_offset_percent": 0,
+                  "y_offset_percent": 0,
+                  "layer": 0,
+                  "scale": "600:-1"
+                }
+              ],
+              "transitions_overlays": [],
+              "caption": {},
+              "motion_defaults": {}
+            },
+            "needAudio": true,
+            "auto_background": true,
+            "channel_name": "BookSummary",
+            "bucket_name": "youtube-automation",
+            "workspace_folder": "Previews",
+            "default_voice": "ethan_male_story.mp3",
+            "voice_reference": null,
+            "s3_url": "http://host.docker.internal:9000"
+          },
+          "webhookUrl": "https://n8n.manojnanjundaswamy.com/webhook/1ae252ac-23cc-4050-820a-7d27c208c336",
+          "executionMode": "production"
+        }
+      }
+    ],
+    "Normalize": [
+      {
+        "json": {
+          "normalized": {
+            "segment": {
+              "segment_number": 1,
+              "chapter_number": 0,
+              "chapter_name": "Intro — The Power of Small Beginnings",
+              "scene_type": "intro",
+              "imagedescription": "soft sunrise light warm desk gentle tone wide perspective",
+              "narration_text": "Hello and welcome. Today, we are exploring Atomic Habits by James Clear — a book that quietly reshaped millions of lives. This isn’t about overnight change or endless motivation. It’s about the quiet rhythm of daily actions, the invisible choices that quietly rewrite our destiny."
+            },
+            "filter_config": {
+              "meta": {
+                "resolution": "1920:1080",
+                "fps": 30,
+                "default_scale": "600:-1"
+              },
+              "timing": {},
+              "visual_overlays": {
+                "visual_0": {
+                  "id": "spectrum",
+                  "type": "video",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/spectrum_mic.mp4",
+                  "scale": "500:-1",
+                  "colorkey": "black:0.08:0.1",
+                  "opacity": 90,
+                  "x_offset_percent": 25,
+                  "y_offset_percent": -25,
+                  "layer": 1,
+                  "segment_targets": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                "visual_1": {
+                  "id": "logo",
+                  "type": "image",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/logo_bird.jpg",
+                  "scale": "150:-1",
+                  "colorkey": "white:0.08:0.1",
+                  "opacity": 40,
+                  "x_offset_percent": 45,
+                  "y_offset_percent": 40,
+                  "scene_types": [
+                    "chapter",
+                    "intro"
+                  ],
+                  "layer": 2
+                }
+              },
+              "text_overlays": {
+                "text_0": {
+                  "id": "chapter_label",
+                  "type": "text",
+                  "text": "Atomic Habits — Chapter 2",
+                  "font": "/app/fonts/ComicNeue-BoldItalic.ttf",
+                  "fontcolor": "yellow",
+                  "fontsize": 60,
+                  "opacity": 100,
+                  "x_offset_percent": 0,
+                  "y_offset_percent": 30,
+                  "scene_types": [
+                    "chapter"
+                  ],
+                  "layer": 3,
+                  "scale": "600:-1"
+                }
+              },
+              "audio_overlays": [
+                {
+                  "id": "background_music",
+                  "type": "music",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/pianoMusic.mp3",
+                  "volume": 0.2,
+                  "scope": "chapter",
+                  "loop": true,
+                  "fade_in": 1.5,
+                  "fade_out": 1.5,
+                  "opacity": 100,
+                  "x_offset_percent": 0,
+                  "y_offset_percent": 0,
+                  "layer": 0,
+                  "scale": "600:-1"
+                },
+                {
+                  "id": "transition_sfx",
+                  "type": "music",
+                  "url": "http://host.docker.internal:9000/youtube-automation/BookSummary/assets/Whoosh.mp3",
+                  "start_time": 0,
+                  "volume": 0.5,
+                  "scope": "segment",
+                  "scene_types": [
+                    "transition"
+                  ],
+                  "opacity": 100,
+                  "x_offset_percent": 0,
+                  "y_offset_percent": 0,
+                  "layer": 0,
+                  "scale": "600:-1"
+                }
+              ],
+              "transitions_overlays": [],
+              "caption": {},
+              "motion_defaults": {}
+            },
+            "need_audio": true,
+            "audioFilePath": "http://host.docker.internal:9000/youtube-automation/audioPart-2025-12-27_11-20-14.mp3",
+            "audioFileName": "audioPart-2025-12-27_11-20-14.mp3",
+            "segment_duration": 10,
+            "audio_duration": null,
+            "context": {
+              "channel_name": "BookSummary",
+              "bucket_name": "youtube-automation",
+              "workspace_folder": "Previews",
+              "s3_url": "http://host.docker.internal:9000",
+              "default_voice": "ethan_male_story.mp3",
+              "voice_reference": null
+            },
+            "meta": {
+              "resolution": "1920:1080",
+              "fps": 30,
+              "default_scale": "600:-1"
+            },
+            "auto_background": true,
+            "filePath": "http://host.docker.internal:9000/youtube-automation/background-2025-12-27_11-20-14.mp4",
+            "fileName": "background-2025-12-27_11-20-14.mp4"
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Generate TTS": {
+      "main": [
+        [
+          {
+            "node": "Upload a file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a file1": {
+      "main": [
+        [
+          {
+            "node": "Probe Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate TTS req body": {
+      "main": [
+        [
+          {
+            "node": "Generate TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Probe Audio": {
+      "main": [
+        [
+          {
+            "node": "Normalize input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook for UI Preview and Render": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Long video workflow": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize input": {
+      "main": [
+        []
+      ]
+    },
+    "Create compose_request_body": {
+      "main": [
+        [
+          {
+            "node": "MergeImageAndAudio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a file": {
+      "main": [
+        [
+          {
+            "node": "If Audio needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pexels Video": {
+      "main": [
+        [
+          {
+            "node": "Choose Pexels Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Choose Pexels Video": {
+      "main": [
+        [
+          {
+            "node": "Download Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Video": {
+      "main": [
+        [
+          {
+            "node": "Upload a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Audio needed": {
+      "main": [
+        [
+          {
+            "node": "Generate TTS req body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize input1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Auto Background is needed": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pexels Video",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If Audio needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "If Auto Background is needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize input1": {
+      "main": [
+        [
+          {
+            "node": "Create compose_request_body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a75930ee-7e69-4689-bc36-4f8656796d89",
+  "meta": {
+    "instanceId": "558d88703fb65b2d0e44613bc35916258b0f0bf983c5d4730c00c424b77ca36a"
+  },
+  "id": "zInLYuWusgvw7V3j",
+  "tags": []
+}

@@ -1,0 +1,363 @@
+{
+    "name": "Video_Schedular_Integrated",
+    "nodes": [
+        {
+            "parameters": {
+                "jsCode": "// Generate a simple UUID v4\nfunction generateUUID() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n    const r = (Math.random() * 16) | 0;\n    const v = c === 'x' ? r : (r & 0x3) | 0x8;\n    return v.toString(16);\n  });\n}\n\n// Get Channel Data\nconst channelData = $('Get Channel').first().json;\n\n// Get timestamp\nconst now = new Date();\nconst yyyymmdd = now.toISOString().slice(0,10).replace(/-/g, '');\nconst hh = String(now.getHours()).padStart(2, '0');\nconst mm = String(now.getMinutes()).padStart(2, '0');\nconst ss = String(now.getSeconds()).padStart(2, '0');\nconst sss = String(now.getMilliseconds()).padStart(3, '0');\nconst timestamp = `${hh}-${mm}-${ss}-${sss}`;\n\n// Define Workspace Folder\nconst workspace_folder = `${yyyymmdd}-${timestamp}`.trim();\n\n// Extract Global Context\nconst bucket_name = channelData.bucket_name.trim();\nconst channel_name = channelData.channel_path.trim();\nconst s3_url = channelData.s3_url.trim();\nconst nca_toolkit_url = channelData.nca_toolkit_url.trim();\nconst sheet_name = channelData.sheet_name.trim();\nconst default_voice = channelData.default_voice;\nconst voice_reference = channelData.voice_reference;\n\nreturn [\n  {\n    json: {\n      workspace_folder,\n      bucket_name,\n      channel_name,\n      s3_url,\n      nca_toolkit_url,\n      sheet_name,\n      default_voice,\n      voice_reference\n    }\n  }\n];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -656,
+                -736
+            ],
+            "id": "16405018-7649-4118-b041-417d62824993",
+            "name": "Code in JavaScript"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Parse prompt_json string to JSON object\nfunction safeParse(str) {\n  try {\n    return JSON.parse(str);\n  } catch (e) {\n    return {};\n  }\n}\n\nlet promptArray = safeParse($('Get Idea').first().json.prompt_json);\n\nconst meta = safeParse($json.meta_config_json);\nconst visuals = safeParse($json.visual_config_json);\nconst texts = safeParse($json.text_config_json);\nconst audios = safeParse($json.audio_config_json);\nconst transitions = safeParse($json.transition_config_json);\nconst caption = safeParse($json.caption_config_json);\n\n// Merge into unified config\nconst filter_config = {\n  ...(meta || {}),\n  visual_overlays: visuals || {},\n  text_overlays: texts || {},\n  audio_overlays: audios || {},\n  caption_config: caption || {},\n  transitions_overlays: transitions || {}\n};\n\nreturn {\n  json: {\n    prompt_parsed: promptArray,\n    filter_config: filter_config\n  }\n};\n"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -208,
+                -736
+            ],
+            "id": "cd02ed21-a7b5-4444-a1f3-414d220702cb",
+            "name": "parse to json"
+        },
+        {
+            "parameters": {
+                "fieldToSplitOut": "prompt_parsed",
+                "include": "selectedOtherFields",
+                "fieldsToInclude": "filter_config",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.splitOut",
+            "typeVersion": 1,
+            "position": [
+                -48,
+                -656
+            ],
+            "id": "f6c89c92-fbb6-4c23-ae24-b4a1a687ad2d",
+            "name": "Split Out"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Prepare Input for ffmpeg_proxy\nconst segment = $json.prompt_parsed; // The split item puts the prompt object here\nconst filterConfig = $json.filter_config;\n\n// Global Context from upstream\nconst globalCtx = $('Code in JavaScript').first().json;\n\nconst context = {\n    channel_name: globalCtx.channel_name,\n    bucket_name: globalCtx.bucket_name,\n    workspace_folder: globalCtx.workspace_folder,\n    s3_url: globalCtx.s3_url,\n    default_voice: globalCtx.default_voice,\n    voice_reference: globalCtx.voice_reference\n};\n\nreturn {\n    json: {\n        segment: segment,\n        filter_config: filterConfig,\n        context: context,\n        need_audio: true,\n        auto_background: true\n    }\n};"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                200,
+                -656
+            ],
+            "id": "prepare_proxy_input",
+            "name": "Prepare Proxy Input"
+        },
+        {
+            "parameters": {
+                "workflowId": "1ae252ac-23cc-4050-820a-7d27c208c336",
+                "mode": "each"
+            },
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                400,
+                -656
+            ],
+            "id": "execute_ffmpeg_proxy",
+            "name": "Call ffmpeg_proxy"
+        },
+        {
+            "parameters": {
+                "jsCode": "// Collect Results and Prepare Final Concat\n// The input items here are the results from the sub-workflow (one per segment)\n\nconst inputs = items.map(item => {\n    // Assuming sub-workflow returns 'response' from compose, or constructing it.\n    // We need the file_url of the generated segment.\n    // If your sub-workflow 'MergeImageAndAudio' returns { response: [{ file_url: ... }] }\n    const resp = item.json.response && item.json.response[0];\n    const url = resp ? resp.file_url : item.json.video_url; // fallback if you change output\n    \n    if (!url) throw new Error(\"Sub-workflow did not return a valid video URL\");\n    \n    return { file_url: url };\n});\n\n// Call buildComposeConcat (Internal function logic)\nfunction buildComposeConcat(inputs, opts = {}) {\n   const { targetFps=30, id=\"final.mp4\" } = opts;\n   const n = inputs.length;\n   const interleaved = [];\n   for (let i = 0; i < n; i++) interleaved.push(`[${i}:v]`, `[${i}:a]`);\n   \n   const concatExpr = `${interleaved.join(\"\")}concat=n=${n}:v=1:a=1[v][a];[v]fps=${targetFps},format=yuv420p[v]`;\n   \n   return {\n       inputs: inputs,\n       outputs: [{\n           options: [\n               { option: \"-filter_complex\", argument: concatExpr },\n               { option: \"-map\", argument: \"[v]\" },\n               { option: \"-map\", argument: \"[a]\" },\n               { option: \"-c:v\", argument: \"libx264\" },\n               { option: \"-c:a\", argument: \"aac\" },\n               { option: \"-shortedt\" }\n           ]\n       }],\n       global_options: [{ option: \"-y\" }],\n       id: id\n   };\n}\n\n// Construct the body\nconst globalCtx = $('Code in JavaScript').first().json;\nconst finalId = `final_video_${globalCtx.workspace_folder}.mp4`;\n\nconst body = buildComposeConcat(inputs, { id: finalId });\n\nreturn [\n    {\n        json: {\n            combine_request_body: body\n        }\n    }\n];"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                650,
+                -656
+            ],
+            "id": "create_combine_body",
+            "name": "Create Combine Request"
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{ $('Code in JavaScript').first().json.nca_toolkit_url }}/v1/ffmpeg/compose",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        {
+                            "name": "X-API-Key",
+                            "value": "thekey"
+                        }
+                    ]
+                },
+                "sendBody": true,
+                "specifyBody": "json",
+                "jsonBody": "={{JSON.stringify($json.combine_request_body, null, 2)}}",
+                "options": {
+                    "timeout": 3000000
+                }
+            },
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [
+                850,
+                -656
+            ],
+            "id": "final_combine_request",
+            "name": "Combine Segments"
+        },
+        {
+            "parameters": {
+                "operation": "update",
+                "documentId": {
+                    "__rl": true,
+                    "value": "1wpa0fkU3NBmISHAHsVPQdy5y2mW1cZj1fO_xn3gbUe8",
+                    "mode": "list",
+                    "cachedResultName": "youtube-automation",
+                    "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1wpa0fkU3NBmISHAHsVPQdy5y2mW1cZj1fO_xn3gbUe8/edit?usp=drivesdk"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "value": "={{ $('Get Channel').first().json.sheet_name }}",
+                    "mode": "name"
+                },
+                "columns": {
+                    "mappingMode": "defineBelow",
+                    "value": {
+                        "row_number": "={{ $('Get Idea').first().json.row_number }}",
+                        "last_updated": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+                        "final_video_url": "={{ $json.response[0].file_url }}",
+                        "status": "success"
+                    },
+                    "matchingColumns": [
+                        "row_number"
+                    ]
+                }
+            },
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.7,
+            "position": [
+                1100,
+                -656
+            ],
+            "id": "update_sheet_success",
+            "name": "Update Final Status"
+        },
+        {
+            "parameters": {},
+            "type": "n8n-nodes-base.manualTrigger",
+            "typeVersion": 1,
+            "position": [
+                -1104,
+                -832
+            ],
+            "id": "9952b8a3-bbbd-4faf-8aee-aa7b8ab01d98",
+            "name": "When clicking ‘Execute workflow’"
+        },
+        {
+            "parameters": {
+                "documentId": {
+                    "__rl": true,
+                    "value": "1wpa0fkU3NBmISHAHsVPQdy5y2mW1cZj1fO_xn3gbUe8",
+                    "mode": "list",
+                    "cachedResultName": "youtube-automation",
+                    "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1wpa0fkU3NBmISHAHsVPQdy5y2mW1cZj1fO_xn3gbUe8/edit?usp=drivesdk"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "mode": "name",
+                    "value": "={{ $('Code in JavaScript').first().json.sheet_name }}"
+                },
+                "filtersUI": {
+                    "values": [
+                        {
+                            "lookupColumn": "status",
+                            "lookupValue": "pending"
+                        },
+                        {
+                            "lookupColumn": "visuals_type",
+                            "lookupValue": "videos"
+                        }
+                    ]
+                },
+                "options": {
+                    "returnFirstMatch": true
+                }
+            },
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.7,
+            "position": [
+                -432,
+                -736
+            ],
+            "id": "4f6f84d5-657a-4ca7-9488-1b4722b30222",
+            "name": "Get Idea",
+            "credentials": {
+                "googleSheetsOAuth2Api": {
+                    "id": "OP5rYdzokjyvy15B",
+                    "name": "Google Sheets account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "documentId": {
+                    "__rl": true,
+                    "value": "1wpa0fkU3NBmISHAHsVPQdy5y2mW1cZj1fO_xn3gbUe8",
+                    "mode": "list",
+                    "cachedResultName": "youtube-automation",
+                    "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1wpa0fkU3NBmISHAHsVPQdy5y2mW1cZj1fO_xn3gbUe8/edit?usp=drivesdk"
+                },
+                "sheetName": {
+                    "__rl": true,
+                    "value": 1718074249,
+                    "mode": "list",
+                    "cachedResultName": "Channel config"
+                },
+                "filtersUI": {
+                    "values": [
+                        {
+                            "lookupColumn": "channel_name",
+                            "lookupValue": "BookSummary"
+                        }
+                    ]
+                },
+                "options": {
+                    "returnFirstMatch": true
+                }
+            },
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.7,
+            "position": [
+                -880,
+                -736
+            ],
+            "id": "17ea15a6-ac4d-4663-932c-b5850f258ab9",
+            "name": "Get Channel",
+            "credentials": {
+                "googleSheetsOAuth2Api": {
+                    "id": "OP5rYdzokjyvy15B",
+                    "name": "Google Sheets account"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Code in JavaScript": {
+            "main": [
+                [
+                    {
+                        "node": "Get Idea",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Idea": {
+            "main": [
+                [
+                    {
+                        "node": "parse to json",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "parse to json": {
+            "main": [
+                [
+                    {
+                        "node": "Split Out",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Out": {
+            "main": [
+                [
+                    {
+                        "node": "Prepare Proxy Input",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Prepare Proxy Input": {
+            "main": [
+                [
+                    {
+                        "node": "Call ffmpeg_proxy",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Call ffmpeg_proxy": {
+            "main": [
+                [
+                    {
+                        "node": "Create Combine Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Create Combine Request": {
+            "main": [
+                [
+                    {
+                        "node": "Combine Segments",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Combine Segments": {
+            "main": [
+                [
+                    {
+                        "node": "Update Final Status",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "When clicking ‘Execute workflow’": {
+            "main": [
+                [
+                    {
+                        "node": "Get Channel",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Channel": {
+            "main": [
+                [
+                    {
+                        "node": "Code in JavaScript",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}
