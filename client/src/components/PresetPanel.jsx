@@ -24,13 +24,29 @@ export default function PresetPanel() {
       return;
     }
 
-    const finalConfig = generateFullConfig(useEditorStore.getState().getStateRaw());
+    const currentState = useEditorStore.getState();
+    const finalConfig = generateFullConfig(currentState.getStateRaw());
+    const videoType = currentState.videoType;
+    const visualsType = currentState.visualsType;
+
     setLoading(true);
 
     try {
-      await updateRow(selectedChannel, selectedRow.row_number, {
-        filter_config: JSON.stringify(finalConfig)
+      const payload = {
+        filter_config: JSON.stringify(finalConfig),
+        type: videoType, // "LONG" or "SHORT"
+        visuals_type: visualsType // "videos", "images", "none"
+      };
+
+      await updateRow(selectedChannel, selectedRow.row_number, payload);
+
+      // Update local store to reflect changes without reload
+      useEditorStore.getState().updateRowData(selectedRow.row_number, {
+        filter_config: payload.filter_config,
+        type: videoType,
+        visuals_type: visualsType
       });
+
       alert("Saved to Google Sheet!");
     } catch (e) {
       alert("Failed to save: " + e.message);

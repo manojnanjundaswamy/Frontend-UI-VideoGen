@@ -26,6 +26,12 @@ export default function TimelineEditor() {
   const previewIndex = useEditorStore((s) => s.previewSegmentIndex || 0);
   const segmentPreviews = useEditorStore((s) => s.segmentPreviews || {});
 
+  // Store State for Options
+  const videoType = useEditorStore((s) => s.videoType);
+  const setVideoType = useEditorStore((s) => s.setVideoType);
+  const visualsType = useEditorStore((s) => s.visualsType);
+  const setVisualsType = useEditorStore((s) => s.setVisualsType);
+
   const setPreviewIndex = useEditorStore.getState().setPreviewSegmentIndex;
   const selectOverlay = useEditorStore.getState().selectOverlay;
   const setSegmentPreviewStatus = useEditorStore.getState().setSegmentPreviewStatus;
@@ -119,40 +125,92 @@ export default function TimelineEditor() {
     );
   }
 
+  // Store State for Options
+
   return (
     <div className="space-y-4">
       <VideoModal url={playingVideoUrl} onClose={() => setPlayingVideoUrl(null)} />
 
-      <div className="flex items-center justify-between px-1">
-        <h4 className="font-semibold text-slate-200 flex items-center gap-2">
-          <Layers className="w-4 h-4 text-indigo-500" />
-          Timeline
-        </h4>
+      <div className="flex flex-col gap-3 px-1 border-b border-white/5 pb-4">
 
-        <div className="flex items-center gap-4">
-          {/* Options Toggles */}
-          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
-            <input
-              type="checkbox"
-              checked={previewOptions.needAudio}
-              onChange={e => setPreviewOptions(p => ({ ...p, needAudio: e.target.checked }))}
-              className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
-            />
-            With Audio
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200">
-            <input
-              type="checkbox"
-              checked={previewOptions.autoBackground}
-              onChange={e => setPreviewOptions(p => ({ ...p, autoBackground: e.target.checked }))}
-              className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
-            />
-            Auto BG (Pexels)
-          </label>
-
-          <div className="w-px h-4 bg-white/10 mx-1"></div>
-
+        {/* Header Title */}
+        <div className="flex items-center justify-between">
+          <h4 className="font-semibold text-slate-200 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-500" />
+            Timeline & Settings
+          </h4>
           <span className="text-xs text-slate-500">{segments.length} segments</span>
+        </div>
+
+        {/* Configuration Row */}
+        <div className="flex flex-wrap items-center gap-3">
+
+          {/* Video Format Dropdown */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Format</span>
+            <select
+              className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none hover:border-slate-600 transition-colors"
+              value={videoType}
+              onChange={(e) => setVideoType(e.target.value)}
+            >
+              <option value="LONG">Landscape (16:9)</option>
+              <option value="SHORT">Portrait (9:16)</option>
+            </select>
+          </div>
+
+          {/* Visuals Source Dropdown */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Visuals</span>
+            <select
+              className="bg-slate-900 border border-slate-700 text-xs text-slate-300 rounded px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none hover:border-slate-600 transition-colors"
+              value={visualsType}
+              onChange={(e) => {
+                const newVal = e.target.value;
+                setVisualsType(newVal);
+                // Auto-disable AutoBG if none
+                if (newVal === 'none') {
+                  setPreviewOptions(p => ({ ...p, autoBackground: false }));
+                } else {
+                  setPreviewOptions(p => ({ ...p, autoBackground: true }));
+                }
+              }}
+            >
+              <option value="videos">Videos</option>
+              <option value="images">Images</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+
+          <div className="w-px h-8 bg-white/10 mx-1"></div>
+
+          {/* Functional Toggles */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] .text-slate-500 font-medium uppercase tracking-wider text-transparent">Preview</span>
+            <div className="flex items-center gap-3 mt-1.5">
+              <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={previewOptions.needAudio}
+                  onChange={e => setPreviewOptions(p => ({ ...p, needAudio: e.target.checked }))}
+                  className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
+                />
+                TTS Audio
+              </label>
+
+              {visualsType !== 'none' && (
+                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none hover:text-slate-200 transition-colors opacity-100 animate-in fade-in duration-300">
+                  <input
+                    type="checkbox"
+                    checked={previewOptions.autoBackground}
+                    onChange={e => setPreviewOptions(p => ({ ...p, autoBackground: e.target.checked }))}
+                    className="rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0 focus:ring-offset-0"
+                  />
+                  Auto BG (Pexels)
+                </label>
+              )}
+            </div>
+          </div>
+
         </div>
       </div>
 

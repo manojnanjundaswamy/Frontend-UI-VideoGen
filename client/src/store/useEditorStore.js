@@ -61,6 +61,8 @@ const useEditorStore = create((set, get) => ({
   presets: [],
   previewSegmentIndex: 0,
   segmentPreviews: {}, // { [segIdx]: { loading: bool, url: string, error: string } }
+  videoType: "LONG", // 'LONG' | 'SHORT'
+  visualsType: "none", // 'images' | 'videos' | 'none'
 
   // --- ACTIONS ---
 
@@ -71,6 +73,26 @@ const useEditorStore = create((set, get) => ({
         [index]: { ...state.segmentPreviews[index], ...status }
       }
     }));
+  },
+
+  setVideoType: (type) => {
+    // Logic to update meta based on type
+    const isShort = type === "SHORT";
+    const resolution = isShort ? "1080:1920" : "1920:1080";
+    const default_scale = isShort ? "1080:-1" : "600:-1";
+
+    set(state => ({
+      videoType: type,
+      meta: {
+        ...state.meta,
+        resolution,
+        default_scale
+      }
+    }));
+  },
+
+  setVisualsType: (type) => {
+    set({ visualsType: type });
   },
 
   // Helper to get raw state (for compatibility with existing code calling getStateRaw)
@@ -108,7 +130,12 @@ const useEditorStore = create((set, get) => ({
     // const state = get(); // needed for meta
 
     // Logical Check for Shorts
-    const isShort = row.type && row.type.toString().toUpperCase().includes('SHORT');
+    const rawType = row.type ? row.type.toString().toUpperCase() : "LONG";
+    const videoType = rawType.includes('SHORT') ? "SHORT" : "LONG";
+
+    const visualsType = row.visuals_type ? row.visuals_type.toLowerCase() : "none";
+
+    const isShort = videoType === "SHORT";
     const resolution = isShort ? "1080:1920" : "1920:1080";
     const default_scale = isShort ? "1080:-1" : "600:-1"; // Adjust default scale for fit
 
@@ -133,7 +160,9 @@ const useEditorStore = create((set, get) => ({
       segments,
       overlays,
       selectedOverlayId: null,
-      meta: newMeta
+      meta: newMeta,
+      videoType,
+      visualsType
     });
   },
 
@@ -182,6 +211,16 @@ const useEditorStore = create((set, get) => ({
 
   setMeta: (metaPatch) => {
     set((s) => ({ meta: { ...s.meta, ...metaPatch } }));
+  },
+
+  updateRowData: (rowNumber, patch) => {
+    set((state) => {
+      const newRows = state.rows.map(r => r.row_number === rowNumber ? { ...r, ...patch } : r);
+      const newSelected = (state.selectedRow && state.selectedRow.row_number === rowNumber)
+        ? { ...state.selectedRow, ...patch }
+        : state.selectedRow;
+      return { rows: newRows, selectedRow: newSelected };
+    });
   },
 
   setPreviewSegmentIndex: (index) => {
